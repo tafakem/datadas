@@ -1,0 +1,8 @@
+{
+  "name": "Sistema de Estadísticas de Salud",
+  "description": "Sistema Web de Estadísticas de Salud para visualización, análisis y gestión de datos de atenciones de salud a partir de archivos Excel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
