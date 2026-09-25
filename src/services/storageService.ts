@@ -1,7 +1,7 @@
 import { Atencion, User, AuditLog, DistrictCoverage } from '../types/health';
 import { INITIAL_ATENCIONES, INITIAL_USERS, INITIAL_LOGS, INITIAL_DISTRICTS } from '../data/mockData';
 
-const ATENCIONES_KEY = 'minsa_estadisticas_atenciones_v1';
+const ATENCIONES_KEY = 'minsa_estadisticas_atenciones_v2';
 const USERS_KEY = 'minsa_estadisticas_usuarios_v1';
 const LOGS_KEY = 'minsa_estadisticas_logs_v1';
 const CURRENT_USER_KEY = 'minsa_estadisticas_current_user_v1';

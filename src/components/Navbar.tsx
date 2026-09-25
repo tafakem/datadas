@@ -56,8 +56,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     setReportsDropdownOpen(false);
   };
 
-  const isStatsActive = currentModule.startsWith('stats-');
-  const isReportsActive = currentModule.startsWith('report-');
+  const isStatsActive = currentModule.startsWith('stats-') || currentModule.startsWith('est-');
+  const isReportsActive = currentModule.startsWith('report-') || currentModule.startsWith('rep-');
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-50 shadow-lg">
@@ -168,6 +168,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button onClick={() => handleNavClick('stats-disa')} className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-blue-600 hover:text-white flex items-center justify-between">
                     <span>B.8. Por DISA / Región</span>
                     <span className="text-[10px] text-slate-400">Regional</span>
+                  </button>
+                  <button onClick={() => handleNavClick('stats-oportunidad')} className="w-full text-left px-3 py-2 text-xs text-emerald-300 font-semibold hover:bg-emerald-600 hover:text-white flex items-center justify-between border-t border-slate-800">
+                    <span>B.9. Oportunidad (0-10d, 11-29d, ≥30d)</span>
+                    <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700/60 font-mono">Días Atención-Registro</span>
                   </button>
                 </div>
               )}
@@ -369,6 +373,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button onClick={() => handleNavClick('stats-materna')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.6 Condición Materna</button>
             <button onClick={() => handleNavClick('stats-tipo-atencion')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.7 Tipo Atención</button>
             <button onClick={() => handleNavClick('stats-disa')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.8 DISA / Región</button>
+            <button onClick={() => handleNavClick('stats-oportunidad')} className="col-span-2 text-left px-2 py-1.5 rounded text-xs text-emerald-300 font-bold bg-emerald-950/40 border border-emerald-800/40 hover:bg-slate-800">B.9 Oportunidad (0-10d / 11-29d / ≥30d)</button>
           </div>
 
           <div className="pt-2 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3">

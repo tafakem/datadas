@@ -96,6 +96,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
     .slice(0, 6);
   const maxServiceVal = Math.max(...sortedServices.map(s => s[1]), 1);
 
+  // Opportunity stats (0-10d, 11-29d, 30+d)
+  let count0_10 = 0;
+  let count11_29 = 0;
+  let count30_mas = 0;
+  atenciones.forEach(a => {
+    if (a.fecha_atencion && a.fecha_registro) {
+      const dAtencion = new Date(a.fecha_atencion.substring(0, 10));
+      const dRegistro = new Date(a.fecha_registro.substring(0, 10));
+      if (!isNaN(dAtencion.getTime()) && !isNaN(dRegistro.getTime())) {
+        const diff = Math.round((dRegistro.getTime() - dAtencion.getTime()) / (1000 * 60 * 60 * 24));
+        if (diff <= 10) count0_10++;
+        else if (diff <= 29) count11_29++;
+        else count30_mas++;
+      }
+    }
+  });
+  const pct0_10 = atenciones.length > 0 ? Math.round((count0_10 / atenciones.length) * 1000) / 10 : 0;
+
   // Recent 8 atenciones
   const ultimasAtenciones = [...atenciones]
     .sort((a, b) => new Date(`${b.fecha_atencion} ${b.hora_atencion}`).getTime() - new Date(`${a.fecha_atencion} ${a.hora_atencion}`).getTime())
@@ -285,6 +303,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
           </div>
         </div>
 
+      </div>
+
+      {/* Barra Resumen de Oportunidad de Registro (0-10d, 11-29d, ≥30d) */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center space-x-2">
+              <span>Oportunidad de Digitación</span>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
+                {pct0_10}% Oportuno (≤10d)
+              </span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Días transcurridos entre la Fecha de Atención y la Fecha de Registro en el sistema
+            </p>
+          </div>
+        </div>
+
+        {/* 3 mini-pills y botón de acceso */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>0-10 días: <strong>{count0_10}</strong></span>
+          </div>
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 text-xs font-semibold border border-amber-200">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>11-29 días: <strong>{count11_29}</strong></span>
+          </div>
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-800 text-xs font-semibold border border-rose-200">
+            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span>≥30 días: <strong>{count30_mas}</strong></span>
+          </div>
+          <button
+            onClick={() => onNavigate('stats-oportunidad')}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-blue-600 text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
+          >
+            <span>Ver B.9 Oportunidad</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Gráficos Principales: Líneas y Barras */}

@@ -28,6 +28,7 @@ import { AtencionesSexoEdad } from './components/Statistics/AtencionesSexoEdad';
 import { AtencionesCondicionMaterna } from './components/Statistics/AtencionesCondicionMaterna';
 import { AtencionesTipoAtencion } from './components/Statistics/AtencionesTipoAtencion';
 import { AtencionesDisa } from './components/Statistics/AtencionesDisa';
+import { AtencionesOportunidad } from './components/Statistics/AtencionesOportunidad';
 
 import { ReporteGeneral } from './components/Reports/ReporteGeneral';
 import { ReporteProductividad } from './components/Reports/ReporteProductividad';
@@ -220,7 +221,11 @@ export default function App() {
         )}
 
         {(currentModule === 'stats-punto-dig' || currentModule === 'est-punto') && (
-          <AtencionesPuntoDigitacion atenciones={filteredAtenciones} />
+          <AtencionesPuntoDigitacion
+            atenciones={filteredAtenciones}
+            initialPunto={filters.puntoDigitacion}
+            onNavigateToOportunidad={() => setCurrentModule('stats-oportunidad')}
+          />
         )}
 
         {(currentModule === 'stats-profesional' || currentModule === 'est-profesional') && (
@@ -248,6 +253,10 @@ export default function App() {
             atenciones={filteredAtenciones}
             onNavigateToMap={() => setCurrentModule('mapa')}
           />
+        )}
+
+        {(currentModule === 'stats-oportunidad' || currentModule === 'est-oportunidad') && (
+          <AtencionesOportunidad atenciones={filteredAtenciones} />
         )}
 
         {(currentModule === 'report-general' || currentModule === 'rep-general') && (

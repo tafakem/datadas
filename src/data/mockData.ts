@@ -140,35 +140,51 @@ const generateMockAtenciones = (): Atencion[] => {
     const isExtramural = i % 7 === 0;
     const isHospitalizado = (i % 11 === 0 && srv.cod !== '002');
 
-    atenciones.push({
-      id: idCounter,
-      nro_formato: `F-${month.replace('-', '')}-${String(1000 + idCounter).padStart(5, '0')}`,
-      fecha_atencion: fechaAtencion,
-      hora_atencion: hora,
-      tipo_doc: 'DNI',
-      doc_identidad: String(70000000 + (idCounter * 1234) % 9999999),
-      contrato: `SIS-${20260000 + idCounter}`,
-      beneficiario: pac.nom,
-      fecha_nacimiento: fechaNac,
-      edad: pac.edad,
-      sexo: pac.sexo,
-      codigo_eess: eess.cod,
-      nombre_eess: eess.nombre,
-      cod_servicio: srv.cod,
-      descripcion_servicio: srv.desc,
-      dni_profesional: prof.dni,
-      nombre_profesional: prof.nombre,
-      tipo_profesional: prof.tipo,
-      colegiatura: prof.col,
-      rne: prof.rne,
-      tarifa: srv.tarifa,
-      historia_clinica: `HC-${10000 + (idCounter % 500)}`,
-      componente: i % 10 === 0 ? 'SEMISUBSIDIADO' : 'SUBSIDIADO',
-      condicion_materna: pac.sexo === 'FEMENINO' && pac.edad >= 15 && pac.edad <= 49 ? pac.cond : 'NO APLICA',
-      tipo_atencion: isHospitalizado ? 'HOSPITALIZADO' : 'AMBULATORIO',
-      lugar_atencion: isExtramural ? 'EXTRAMURAL' : 'INTRAMURAL',
-      eess_referencia: i % 8 === 0 ? 'HOSPITAL NACIONAL ARZOBISPO LOAYZA' : '',
-      fecha_registro: `${fechaAtencion} ${hora}`,
+      // Generación realista de oportunidad de digitación (0-10 días, 11-29 días, 30+ días)
+      let delayDays = i % 9; // 0-8 días (rango 0-10 días, ~60%)
+      if (i % 7 === 0) {
+        delayDays = 30 + ((i * 5) % 35); // 30 - 64 días (rango 30+ días, ~15%)
+      } else if (i % 4 === 0) {
+        delayDays = 11 + ((i * 3) % 18); // 11 - 28 días (rango 11-29 días, ~25%)
+      }
+
+      const dAtencion = new Date(`${fechaAtencion}T${hora}`);
+      const dRegistro = new Date(dAtencion.getTime() + delayDays * 24 * 60 * 60 * 1000);
+      const regYear = dRegistro.getFullYear();
+      const regMonth = String(dRegistro.getMonth() + 1).padStart(2, '0');
+      const regDay = String(dRegistro.getDate()).padStart(2, '0');
+      const regHora = `${String(8 + ((i * 3) % 10)).padStart(2, '0')}:${String((i * 13) % 60).padStart(2, '0')}:00`;
+      const fechaRegistro = `${regYear}-${regMonth}-${regDay} ${regHora}`;
+
+      atenciones.push({
+        id: idCounter,
+        nro_formato: `F-${month.replace('-', '')}-${String(1000 + idCounter).padStart(5, '0')}`,
+        fecha_atencion: fechaAtencion,
+        hora_atencion: hora,
+        tipo_doc: 'DNI',
+        doc_identidad: String(70000000 + (idCounter * 1234) % 9999999),
+        contrato: `SIS-${20260000 + idCounter}`,
+        beneficiario: pac.nom,
+        fecha_nacimiento: fechaNac,
+        edad: pac.edad,
+        sexo: pac.sexo,
+        codigo_eess: eess.cod,
+        nombre_eess: eess.nombre,
+        cod_servicio: srv.cod,
+        descripcion_servicio: srv.desc,
+        dni_profesional: prof.dni,
+        nombre_profesional: prof.nombre,
+        tipo_profesional: prof.tipo,
+        colegiatura: prof.col,
+        rne: prof.rne,
+        tarifa: srv.tarifa,
+        historia_clinica: `HC-${10000 + (idCounter % 500)}`,
+        componente: i % 10 === 0 ? 'SEMISUBSIDIADO' : 'SUBSIDIADO',
+        condicion_materna: pac.sexo === 'FEMENINO' && pac.edad >= 15 && pac.edad <= 49 ? pac.cond : 'NO APLICA',
+        tipo_atencion: isHospitalizado ? 'HOSPITALIZADO' : 'AMBULATORIO',
+        lugar_atencion: isExtramural ? 'EXTRAMURAL' : 'INTRAMURAL',
+        eess_referencia: i % 8 === 0 ? 'HOSPITAL NACIONAL ARZOBISPO LOAYZA' : '',
+        fecha_registro: fechaRegistro,
       digitador: digitadores[i % digitadores.length],
       nro_cred: srv.cod === '002' ? `CRED-${100 + idCounter}` : '',
       usuario_actualiza: i % 15 === 0 ? 'admin' : undefined,
