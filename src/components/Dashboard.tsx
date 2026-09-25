@@ -345,6 +345,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
             <span>Ver B.9 Oportunidad</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
+          <button
+            onClick={() => onNavigate('stats-registro-atencion')}
+            className="px-3 py-1.5 rounded-xl bg-cyan-800 hover:bg-cyan-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
+          >
+            <span>Ver B.10 Cruce Meses</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 

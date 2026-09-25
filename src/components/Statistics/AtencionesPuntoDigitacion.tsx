@@ -26,6 +26,7 @@ interface Props {
   atenciones: Atencion[];
   initialPunto?: string;
   onNavigateToOportunidad?: () => void;
+  onNavigateToRegistroVsAtencion?: () => void;
 }
 
 // Helper to extract year, month and formatted label from fecha_registro
@@ -99,6 +100,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
   atenciones,
   initialPunto,
   onNavigateToOportunidad,
+  onNavigateToRegistroVsAtencion,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedPunto, setSelectedPunto] = useState<string>(initialPunto || 'TODOS');
@@ -414,6 +416,42 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
       })
       .sort((a, b) => b.total - a.total);
   }, [atenciones]);
+
+  // Cross analysis: Período de Registro (Digitado) vs Mes de Atención (Clínico) for active punto
+  const registroVsAtencionCruzado = useMemo(() => {
+    const regPeriodsMap = new Map<string, { key: string; label: string }>();
+    const atenMonthsMap = new Map<string, { key: string; label: string }>();
+    const matrix: Record<string, Record<string, number>> = {};
+    const periodoTotals: Record<string, number> = {};
+
+    puntoAtenciones.forEach(a => {
+      const reg = extractMesRegistro(a.fecha_registro);
+      const aten = extractMesRegistro(a.fecha_atencion);
+
+      if (reg.key !== 'OTRO' && reg.key !== 'SIN_FECHA' && aten.key !== 'OTRO' && aten.key !== 'SIN_FECHA') {
+        if (!regPeriodsMap.has(reg.key)) regPeriodsMap.set(reg.key, reg);
+        if (!atenMonthsMap.has(aten.key)) atenMonthsMap.set(aten.key, aten);
+
+        if (!matrix[reg.key]) {
+          matrix[reg.key] = {};
+          periodoTotals[reg.key] = 0;
+        }
+        matrix[reg.key][aten.key] = (matrix[reg.key][aten.key] || 0) + 1;
+        periodoTotals[reg.key]++;
+      }
+    });
+
+    const regList = Array.from(regPeriodsMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const atenList = Array.from(atenMonthsMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+
+    return {
+      matrix,
+      periodoTotals,
+      regList,
+      atenList,
+      hasData: regList.length > 0 && atenList.length > 0,
+    };
+  }, [puntoAtenciones]);
 
   // Filtered detail list (with optional month and opportunity range filter)
   const detailList = useMemo(() => {
@@ -1219,6 +1257,116 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
             </table>
           </div>
         </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECCIÓN CRUCE: PERÍODO DE REGISTRO VS MES DE ATENCIÓN                     */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center space-x-2.5">
+            <span className="p-2 bg-cyan-50 text-cyan-600 rounded-xl">
+              <Layers className="w-5 h-5" />
+            </span>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center space-x-2">
+                <span>Cruce: Período de Registro vs Mes de Atención</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">
+                  {selectedPunto === 'TODOS' ? 'Todos los Puntos' : selectedPunto}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Evalúa qué meses de atención clínica (FUAs de Ene, Feb, Mar...) fueron digitados durante cada período de captura
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToRegistroVsAtencion && (
+            <button
+              onClick={onNavigateToRegistroVsAtencion}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-600 text-cyan-800 hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+            >
+              <span>Ver Módulo Completo B.10</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {registroVsAtencionCruzado.hasData ? (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4 sticky left-0 bg-slate-100 z-10 min-w-[160px]">
+                    Período Registro (Mes Digitado)
+                  </th>
+                  <th className="py-3 px-3 text-right bg-slate-200/70 border-r border-slate-200 font-black">
+                    Total Digitado
+                  </th>
+                  {registroVsAtencionCruzado.atenList.map(m => (
+                    <th key={m.key} className="py-3 px-3 text-center border-r border-slate-200 font-bold min-w-[85px]">
+                      {m.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {registroVsAtencionCruzado.regList.map(reg => {
+                  const total = registroVsAtencionCruzado.periodoTotals[reg.key] || 0;
+                  return (
+                    <tr key={reg.key} className="hover:bg-cyan-50/40 transition-colors">
+                      <td className="py-2.5 px-4 font-bold text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-100">
+                        {reg.label}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900 bg-slate-50 border-r border-slate-200">
+                        {total}
+                      </td>
+                      {registroVsAtencionCruzado.atenList.map(aten => {
+                        const count = registroVsAtencionCruzado.matrix[reg.key]?.[aten.key] || 0;
+                        const isSame = reg.key === aten.key;
+                        const isLag = reg.key > aten.key;
+                        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+
+                        return (
+                          <td
+                            key={aten.key}
+                            className={`py-2.5 px-3 text-center font-mono border-r border-slate-100 ${
+                              count > 0
+                                ? isSame
+                                  ? 'bg-emerald-50 text-emerald-900 font-black border-emerald-200'
+                                  : isLag
+                                  ? 'bg-amber-50 text-amber-900 font-bold border-amber-200'
+                                  : 'text-slate-700'
+                                : 'text-slate-300'
+                            }`}
+                            title={
+                              count > 0
+                                ? `En ${reg.label} se digitaron ${count} FUAs con atención en ${aten.label} (${pct}%)`
+                                : 'Sin registros'
+                            }
+                          >
+                            {count > 0 ? (
+                              <div>
+                                <span className="text-xs">{count}</span>
+                                <span className="block text-[9px] opacity-75 font-normal">{pct}%</span>
+                              </div>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-6 text-center text-slate-400 text-xs">
+            No hay registros suficientes para armar la matriz de cruce de fechas.
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}

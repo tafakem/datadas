@@ -173,6 +173,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>B.9. Oportunidad (0-10d, 11-29d, ≥30d)</span>
                     <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700/60 font-mono">Días Atención-Registro</span>
                   </button>
+                  <button onClick={() => handleNavClick('stats-registro-atencion')} className="w-full text-left px-3 py-2 text-xs text-cyan-300 font-semibold hover:bg-cyan-600 hover:text-white flex items-center justify-between border-t border-slate-800">
+                    <span>B.10. Período Registro vs Atención</span>
+                    <span className="text-[9px] bg-cyan-950 text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-700/60 font-mono">Cruce FUAs</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -374,6 +378,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button onClick={() => handleNavClick('stats-tipo-atencion')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.7 Tipo Atención</button>
             <button onClick={() => handleNavClick('stats-disa')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.8 DISA / Región</button>
             <button onClick={() => handleNavClick('stats-oportunidad')} className="col-span-2 text-left px-2 py-1.5 rounded text-xs text-emerald-300 font-bold bg-emerald-950/40 border border-emerald-800/40 hover:bg-slate-800">B.9 Oportunidad (0-10d / 11-29d / ≥30d)</button>
+            <button onClick={() => handleNavClick('stats-registro-atencion')} className="col-span-2 text-left px-2 py-1.5 rounded text-xs text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-800/40 hover:bg-slate-800">B.10 Período Registro vs Atención (Cruce Meses)</button>
           </div>
 
           <div className="pt-2 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3">

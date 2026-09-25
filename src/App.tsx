@@ -29,6 +29,7 @@ import { AtencionesCondicionMaterna } from './components/Statistics/AtencionesCo
 import { AtencionesTipoAtencion } from './components/Statistics/AtencionesTipoAtencion';
 import { AtencionesDisa } from './components/Statistics/AtencionesDisa';
 import { AtencionesOportunidad } from './components/Statistics/AtencionesOportunidad';
+import { AtencionesRegistroVsAtencion } from './components/Statistics/AtencionesRegistroVsAtencion';
 
 import { ReporteGeneral } from './components/Reports/ReporteGeneral';
 import { ReporteProductividad } from './components/Reports/ReporteProductividad';
@@ -225,6 +226,7 @@ export default function App() {
             atenciones={filteredAtenciones}
             initialPunto={filters.puntoDigitacion}
             onNavigateToOportunidad={() => setCurrentModule('stats-oportunidad')}
+            onNavigateToRegistroVsAtencion={() => setCurrentModule('stats-registro-atencion')}
           />
         )}
 
@@ -257,6 +259,16 @@ export default function App() {
 
         {(currentModule === 'stats-oportunidad' || currentModule === 'est-oportunidad') && (
           <AtencionesOportunidad atenciones={filteredAtenciones} />
+        )}
+
+        {(currentModule === 'stats-registro-atencion' || currentModule === 'est-registro-atencion') && (
+          <AtencionesRegistroVsAtencion
+            atenciones={filteredAtenciones}
+            onNavigateToPunto={(punto) => {
+              setFilters(f => ({ ...f, puntoDigitacion: punto }));
+              setCurrentModule('stats-punto-dig');
+            }}
+          />
         )}
 
         {(currentModule === 'report-general' || currentModule === 'rep-general') && (
