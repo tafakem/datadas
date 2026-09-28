@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Atencion, Sexo } from '../types/health';
+import { Atencion, Sexo, DigitadorRecord, DigitadorEstadisticaCompleta } from '../types/health';
 
 export interface ParseExcelResult {
   success: boolean;
@@ -7,6 +7,13 @@ export interface ParseExcelResult {
   errors: string[];
   totalRows: number;
   duplicateCount: number;
+}
+
+export interface ParseDigitadoresResult {
+  success: boolean;
+  data: Omit<DigitadorRecord, 'id'>[];
+  errors: string[];
+  totalRows: number;
 }
 
 export const EXPECTED_EXCEL_COLUMNS = [
@@ -45,9 +52,22 @@ export const EXPECTED_EXCEL_COLUMNS = [
   'punto_digitacion',
 ];
 
+export const EXPECTED_DIGITADOR_COLUMNS = [
+  'dni',
+  'nombre_completo',
+  'cod_punto_digitacion',
+  'punto_digitacion',
+  'codigo_eess',
+  'nombre_eess',
+  'cargo',
+  'estado',
+  'correo',
+  'telefono',
+];
+
 export class ExcelService {
   /**
-   * Parse an uploaded Excel file array buffer
+   * Parse an uploaded Excel file array buffer for Atenciones
    */
   static parseExcelFile(buffer: ArrayBuffer, existingAtenciones: Atencion[]): ParseExcelResult {
     const errors: string[] = [];
@@ -177,6 +197,86 @@ export class ExcelService {
   }
 
   /**
+   * Parse an uploaded Excel file for Maestro de Digitadores
+   */
+  static parseDigitadoresExcel(buffer: ArrayBuffer): ParseDigitadoresResult {
+    const errors: string[] = [];
+    try {
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        return { success: false, data: [], errors: ['El archivo Excel está vacío.'], totalRows: 0 };
+      }
+
+      const sheet = workbook.Sheets[firstSheetName];
+      const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      if (rawRows.length === 0) {
+        return { success: false, data: [], errors: ['La hoja seleccionada no contiene registros.'], totalRows: 0 };
+      }
+
+      const getVal = (row: Record<string, unknown>, keys: string[], def = ''): string => {
+        for (const k of keys) {
+          const matchKey = Object.keys(row).find(rk => rk.trim().toLowerCase() === k.toLowerCase());
+          if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null) {
+            return String(row[matchKey]).trim();
+          }
+        }
+        return def;
+      };
+
+      const parsed: Omit<DigitadorRecord, 'id'>[] = [];
+
+      rawRows.forEach((row, idx) => {
+        const rowNum = idx + 2;
+        const nombre = getVal(row, ['nombre_completo', 'nombre', 'nombres', 'digitador', 'apellidos_nombres', 'personal']);
+        if (!nombre) {
+          errors.push(`Fila ${rowNum}: El campo 'nombre_completo' o 'digitador' es obligatorio.`);
+          return;
+        }
+
+        const dni = getVal(row, ['dni', 'doc_identidad', 'dni_digitador', 'documento']);
+        const cod_punto = getVal(row, ['cod_punto_digitacion', 'cod_punto', 'codigo_punto', 'punto_cod'], 'PTO-DIG-01');
+        const punto = getVal(row, ['punto_digitacion', 'punto', 'nombre_punto', 'centro_digitacion'], 'PUNTO DIGITACIÓN');
+        const cod_eess = getVal(row, ['codigo_eess', 'cod_eess', 'eess_cod']);
+        const nom_eess = getVal(row, ['nombre_eess', 'eess', 'establecimiento']);
+        const cargo = getVal(row, ['cargo', 'condicion', 'perfil', 'puesto'], 'Digitador Asistencial');
+        const rawEstado = getVal(row, ['estado', 'condicion_laboral'], 'ACTIVO').toUpperCase();
+        const estado: 'ACTIVO' | 'INACTIVO' = rawEstado.includes('INACT') ? 'INACTIVO' : 'ACTIVO';
+        const correo = getVal(row, ['correo', 'email', 'correo_electronico']);
+        const telefono = getVal(row, ['telefono', 'celular', 'movil']);
+
+        parsed.push({
+          dni,
+          nombre_completo: nombre,
+          cod_punto_digitacion: cod_punto,
+          punto_digitacion: punto,
+          codigo_eess: cod_eess,
+          nombre_eess: nom_eess,
+          cargo,
+          estado,
+          correo,
+          telefono,
+        });
+      });
+
+      return {
+        success: parsed.length > 0,
+        data: parsed,
+        errors,
+        totalRows: rawRows.length,
+      };
+    } catch (err: unknown) {
+      return {
+        success: false,
+        data: [],
+        errors: [`Error al procesar archivo Excel de digitadores: ${(err as Error).message}`],
+        totalRows: 0,
+      };
+    }
+  }
+
+  /**
    * Export atenciones or arbitrary tabular data to a styled .xlsx file
    */
   static exportToExcel(
@@ -249,7 +349,77 @@ export class ExcelService {
   }
 
   /**
-   * Generates the sample Excel file deliverable for users to download
+   * Export monthly statistics by digitador and punto de digitación
+   */
+  static exportDigitadoresMensualizadoExcel(
+    statsList: DigitadorEstadisticaCompleta[],
+    allMonths: string[],
+    filename = 'Estadisticas_Mensualizadas_Digitadores.xlsx'
+  ): void {
+    if (!statsList || statsList.length === 0) return;
+
+    // Sheet 1: Resumen General con columnas mensualizadas (basadas en fecha_atencion)
+    const resumenRows = statsList.map(s => {
+      const row: Record<string, any> = {
+        'DNI': s.dni || 'S/D',
+        'Nombre del Digitador': s.nombre_completo,
+        'Punto de Digitación': s.punto_digitacion,
+        'Cód. Punto': s.cod_punto_digitacion,
+        'EESS Principal': s.nombre_eess || 'No especificado',
+        'Cargo / Función': s.cargo || 'Digitador Asistencial',
+        'Estado': s.estado,
+        'Total Atenciones': s.totalAtenciones,
+        'Pacientes Únicos': s.pacientesUnicos,
+        'Oportunidad Promedio (Días)': s.diasPromedioOportunidad,
+        'Tarifas SIS (S/)': s.totalTarifa,
+      };
+
+      // Add monthly columns based on fecha_atencion
+      allMonths.forEach(m => {
+        const mesData = s.mensualizado.find(x => x.mes === m);
+        row[`Atenc. (${m})`] = mesData ? mesData.totalAtenciones : 0;
+      });
+
+      return row;
+    });
+
+    const wsResumen = XLSX.utils.json_to_sheet(resumenRows);
+    wsResumen['!cols'] = Object.keys(resumenRows[0] || {}).map(k => ({
+      wch: Math.max(k.length + 3, 14),
+    }));
+
+    // Sheet 2: Detalle Mensualizado Extendido
+    const detalleMesRows: Record<string, any>[] = [];
+    statsList.forEach(s => {
+      s.mensualizado.forEach(m => {
+        detalleMesRows.push({
+          'DNI': s.dni,
+          'Nombre Digitador': s.nombre_completo,
+          'Punto Digitación': s.punto_digitacion,
+          'Período Atención (YYYY-MM)': m.mes,
+          'Mes de Atención': m.labelMes,
+          'Atenciones Médicas': m.totalAtenciones,
+          'Pacientes Únicos': m.pacientesUnicos,
+          'Oportunidad Promedio (Días)': m.diasPromedioOportunidad,
+          'Monto Tarifario (S/)': m.totalTarifa,
+          'EESS Atendidos': m.eessCount,
+        });
+      });
+    });
+
+    const wsDetalle = XLSX.utils.json_to_sheet(detalleMesRows);
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, wsResumen, 'Resumen_Digitadores');
+    if (detalleMesRows.length > 0) {
+      XLSX.utils.book_append_sheet(workbook, wsDetalle, 'Detalle_Mensualizado');
+    }
+
+    XLSX.writeFile(workbook, filename);
+  }
+
+  /**
+   * Generates the sample Excel file deliverable for Atenciones
    */
   static downloadSampleTemplate(): void {
     const templateRows = [
@@ -364,5 +534,103 @@ export class ExcelService {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plantilla_Atenciones');
     XLSX.writeFile(wb, 'plantilla_atenciones_ejemplo.xlsx');
+  }
+
+  /**
+   * Generates sample Excel file deliverable for Maestro de Digitadores
+   */
+  static downloadDigitadoresTemplate(): void {
+    const templateRows = [
+      {
+        dni: '45892134',
+        nombre_completo: 'Lic. Patricia Vega Salas',
+        cod_punto_digitacion: 'PTO-DIG-01',
+        punto_digitacion: 'DIGITACIÓN SAN MARTÍN',
+        codigo_eess: '00001245',
+        nombre_eess: 'C.S. SAN MARTIN DE PORRES',
+        cargo: 'Digitador Asistencial SIS Principal',
+        estado: 'ACTIVO',
+        correo: 'pvega.digitacion@minsa.gob.pe',
+        telefono: '984512367',
+      },
+      {
+        dni: '41852963',
+        nombre_completo: 'Tec. Julio Quispe Peña',
+        cod_punto_digitacion: 'PTO-DIG-01',
+        punto_digitacion: 'DIGITACIÓN SAN MARTÍN',
+        codigo_eess: '00003189',
+        nombre_eess: 'C.S. CONDEVILLA',
+        cargo: 'Técnico de Cómputo y Digitación',
+        estado: 'ACTIVO',
+        correo: 'jquispe.digitador@minsa.gob.pe',
+        telefono: '958471236',
+      },
+      {
+        dni: '70258142',
+        nombre_completo: 'Tec. Marco Aurelio Soto',
+        cod_punto_digitacion: 'PTO-DIG-02',
+        punto_digitacion: 'DIGITACIÓN JESÚS MARÍA',
+        codigo_eess: '00004512',
+        nombre_eess: 'C.S. JESUS MARIA',
+        cargo: 'Técnico en Informática y Digitación',
+        estado: 'ACTIVO',
+        correo: 'msoto.digitacion@minsa.gob.pe',
+        telefono: '971254896',
+      },
+      {
+        dni: '48963251',
+        nombre_completo: 'Bach. Andrea Vivanco',
+        cod_punto_digitacion: 'PTO-DIG-03',
+        punto_digitacion: 'DIGITACIÓN HOSP CAYETANO',
+        codigo_eess: '00005698',
+        nombre_eess: 'HOSPITAL CAYETANO HEREDIA',
+        cargo: 'Digitador Hospitalario SIS',
+        estado: 'ACTIVO',
+        correo: 'avivanco.hch@minsa.gob.pe',
+        telefono: '992145789',
+      },
+      {
+        dni: '43215689',
+        nombre_completo: 'Ing. Carlos Gutierrez Miranda',
+        cod_punto_digitacion: 'PTO-DIG-04',
+        punto_digitacion: 'DIGITACIÓN CALLAO',
+        codigo_eess: '00007812',
+        nombre_eess: 'C.S. BELLAVISTA',
+        cargo: 'Especialista en Sistemas y Digitación',
+        estado: 'ACTIVO',
+        correo: 'cgutierrez.callao@minsa.gob.pe',
+        telefono: '965412893',
+      },
+      {
+        dni: '72145896',
+        nombre_completo: 'Lic. Lorena Rojas Ramos',
+        cod_punto_digitacion: 'PTO-DIG-05',
+        punto_digitacion: 'DIGITACIÓN V.E.S.',
+        codigo_eess: '00006321',
+        nombre_eess: 'C.S. VILLA EL SALVADOR',
+        cargo: 'Digitador de Admisión y SIS',
+        estado: 'ACTIVO',
+        correo: 'lrojas.ves@minsa.gob.pe',
+        telefono: '941258745',
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateRows);
+    ws['!cols'] = [
+      { wch: 12 }, // dni
+      { wch: 30 }, // nombre_completo
+      { wch: 22 }, // cod_punto_digitacion
+      { wch: 28 }, // punto_digitacion
+      { wch: 14 }, // codigo_eess
+      { wch: 30 }, // nombre_eess
+      { wch: 32 }, // cargo
+      { wch: 12 }, // estado
+      { wch: 30 }, // correo
+      { wch: 14 }, // telefono
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Maestro_Digitadores');
+    XLSX.writeFile(wb, 'plantilla_maestro_digitadores.xlsx');
   }
 }

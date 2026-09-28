@@ -712,5 +712,339 @@ export class PdfService {
     const cleanName = data.profesional.nombre.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
     doc.save(`Ficha_Profesional_${data.profesional.dni}_${cleanName}.pdf`);
   }
+
+  /**
+   * Generates a comprehensive official statistics sheet (Ficha de Estadísticas) for an individual Digitador
+   * with monthly production based on FECHA DE ATENCIÓN.
+   */
+  static generateFichaDigitadorPdf(data: {
+    digitador: {
+      dni: string;
+      nombre: string;
+      puntoDigitacion: string;
+      codPunto: string;
+      eessPrincipal?: string;
+      cargo?: string;
+      estado?: string;
+      correo?: string;
+      telefono?: string;
+    };
+    kpis: {
+      totalAtenciones: number;
+      pacientesUnicos: number;
+      diasPromedioOportunidad: number;
+      totalTarifa: number;
+      eessCount: number;
+      serviciosCount: number;
+    };
+    mensualizado: {
+      mes: string;
+      labelMes: string;
+      atenciones: number;
+      pacientes: number;
+      pct: number;
+      diasOportunidad: number;
+      tarifa: number;
+    }[];
+    topEess: { nombre: string; atenciones: number; pacientes: number; pct: number }[];
+    topServicios: { desc: string; atenciones: number; pct: number }[];
+    muestrasAtenciones?: {
+      fechaAtencion: string;
+      fechaRegistro: string;
+      nroFormato: string;
+      eess: string;
+      servicio: string;
+      paciente: string;
+      docIdentidad: string;
+      diasOportunidad: number;
+    }[];
+  }): void {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const totalPagesExp = '{total_pages_count_string}';
+    const now = new Date();
+    const fechaHora = now.toLocaleString('es-PE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const drawHeader = () => {
+      // Header banner (Blue navy)
+      doc.setFillColor(15, 30, 60);
+      doc.rect(margin, 8, pageWidth - margin * 2, 22, 'F');
+
+      // Medical Plus Symbol Badge
+      doc.setFillColor(16, 185, 129); // Emerald
+      doc.circle(margin + 8, 19, 4.5, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('+', margin + 6.8, 20.2);
+
+      // Title & Subtitle
+      doc.setFontSize(10.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text('FICHA TÉCNICA Y ESTADÍSTICA DE PRODUCCIÓN DEL DIGITADOR', margin + 16, 15);
+
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(203, 213, 225);
+      doc.text(
+        'MINISTERIO DE SALUD • SISTEMA INTEGRADO DE SALUD • EVALUACIÓN SEGÚN FECHA DE ATENCIÓN',
+        margin + 16,
+        20
+      );
+      doc.text(`Fecha de Emisión: ${fechaHora}  |  Punto de Digitación: ${data.digitador.puntoDigitacion}`, margin + 16, 25);
+    };
+
+    drawHeader();
+    let currentY = 34;
+
+    // 1. Digitador Profile Info Card
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 24, 2, 2, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(margin, currentY, pageWidth - margin * 2, 24, 2, 2, 'S');
+
+    // Left block: Name and DNI
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(data.digitador.nombre, margin + 4, currentY + 6);
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(`DNI: ${data.digitador.dni || 'No registrado'}  |  Cargo: ${data.digitador.cargo || 'Digitador Asistencial'}`, margin + 4, currentY + 11);
+    doc.text(`Punto de Digitación: [${data.digitador.codPunto}] ${data.digitador.puntoDigitacion}`, margin + 4, currentY + 16);
+    doc.text(`EESS Principal: ${data.digitador.eessPrincipal || 'Asignación Múltiple'}  |  Estado: ${data.digitador.estado || 'ACTIVO'}`, margin + 4, currentY + 21);
+
+    // Right block badge: Contact & Status
+    doc.setFillColor(data.digitador.estado === 'ACTIVO' ? 220 : 254, data.digitador.estado === 'ACTIVO' ? 252 : 226, data.digitador.estado === 'ACTIVO' ? 231 : 226);
+    doc.roundedRect(pageWidth - margin - 35, currentY + 4, 31, 7, 1.5, 1.5, 'F');
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(data.digitador.estado === 'ACTIVO' ? 22 : 185, data.digitador.estado === 'ACTIVO' ? 101 : 28, data.digitador.estado === 'ACTIVO' ? 52 : 28);
+    doc.text(data.digitador.estado === 'ACTIVO' ? 'ESTADO: ACTIVO' : 'ESTADO: INACTIVO', pageWidth - margin - 33, currentY + 8.5);
+
+    if (data.digitador.telefono || data.digitador.correo) {
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      if (data.digitador.telefono) doc.text(`Telf: ${data.digitador.telefono}`, pageWidth - margin - 35, currentY + 16);
+      if (data.digitador.correo) doc.text(data.digitador.correo.substring(0, 22), pageWidth - margin - 35, currentY + 20);
+    }
+
+    currentY += 28;
+
+    // 2. Summary KPI boxes (5 metrics)
+    const kpis = [
+      { label: 'TOTAL ATENCIONES', val: data.kpis.totalAtenciones.toLocaleString() },
+      { label: 'PACIENTES ÚNICOS', val: data.kpis.pacientesUnicos.toLocaleString() },
+      { label: 'OPORTUNIDAD PROM.', val: `${data.kpis.diasPromedioOportunidad} días` },
+      { label: 'EESS ATENDIDOS', val: String(data.kpis.eessCount) },
+      { label: 'TARIFA SIS ESTIMADA', val: `S/ ${data.kpis.totalTarifa.toFixed(2)}` },
+    ];
+
+    const cardWidth = (pageWidth - margin * 2 - 4 * 3) / 5;
+    kpis.forEach((kpi, idx) => {
+      const x = margin + idx * (cardWidth + 3);
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(x, currentY, cardWidth, 13, 1.5, 1.5, 'F');
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(x, currentY, cardWidth, 13, 1.5, 1.5, 'S');
+
+      doc.setFontSize(5.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text(kpi.label, x + 2, currentY + 4.5);
+
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(kpi.val, x + 2, currentY + 10.5);
+    });
+
+    currentY += 17;
+
+    // Helper section header
+    const addSectionHeader = (title: string, y: number, note?: string) => {
+      doc.setFillColor(30, 41, 59);
+      doc.rect(margin, y, pageWidth - margin * 2, 5.5, 'F');
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+      doc.text(title, margin + 3, y + 4);
+      if (note) {
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(226, 232, 240);
+        doc.text(note, pageWidth - margin - doc.getTextWidth(note) - 3, y + 4);
+      }
+    };
+
+    // 3. Producción Mensualizada (Verificando Fecha de Atención)
+    addSectionHeader(
+      '1. PRODUCCIÓN MENSUALIZADA (SEGÚN FECHA DE ATENCIÓN MÉDICA)',
+      currentY,
+      'Validado con fecha_atencion'
+    );
+    currentY += 7;
+
+    const rowsMensual = data.mensualizado.map(m => [
+      m.mes,
+      m.labelMes,
+      m.atenciones.toLocaleString(),
+      m.pacientes.toLocaleString(),
+      `${m.pct}%`,
+      `${m.diasOportunidad} días`,
+      `S/ ${m.tarifa.toFixed(2)}`,
+    ]);
+
+    autoTable(doc, {
+      head: [['Período (YYYY-MM)', 'Mes de Atención', 'Atenciones Digitadas', 'Pacientes Únicos', '% Producción', 'Oportunidad Prom.', 'Monto SIS (S/)']],
+      body: rowsMensual,
+      startY: currentY,
+      margin: { left: margin, right: margin, bottom: 15 },
+      styles: { fontSize: 7, cellPadding: 1.6, textColor: [30, 41, 59] },
+      headStyles: { fillColor: [15, 44, 89], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+
+    // @ts-ignore
+    currentY = doc.lastAutoTable.finalY + 6;
+
+    // 4. Side-by-side or stacked: Top EESS & Top Servicios
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      drawHeader();
+      currentY = 34;
+    }
+
+    addSectionHeader('2. DISTRIBUCIÓN POR ESTABLECIMIENTO DE SALUD (EESS) DIGITADOS', currentY);
+    currentY += 7;
+
+    const rowsEess = data.topEess.map(e => [
+      e.nombre,
+      e.atenciones.toLocaleString(),
+      e.pacientes.toLocaleString(),
+      `${e.pct}%`,
+    ]);
+
+    autoTable(doc, {
+      head: [['Establecimiento de Salud', 'Atenciones', 'Pacientes Atendidos', '% del Total']],
+      body: rowsEess,
+      startY: currentY,
+      margin: { left: margin, right: margin, bottom: 15 },
+      styles: { fontSize: 7, cellPadding: 1.5 },
+      headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+
+    // @ts-ignore
+    currentY = doc.lastAutoTable.finalY + 6;
+
+    if (currentY > pageHeight - 55) {
+      doc.addPage();
+      drawHeader();
+      currentY = 34;
+    }
+
+    addSectionHeader('3. PRINCIPALES SERVICIOS CLÍNICOS DIGITADOS', currentY);
+    currentY += 7;
+
+    const rowsServicios = data.topServicios.map(s => [
+      s.desc,
+      s.atenciones.toLocaleString(),
+      `${s.pct}%`,
+    ]);
+
+    autoTable(doc, {
+      head: [['Descripción del Servicio de Salud', 'Atenciones Realizadas', '% Participación']],
+      body: rowsServicios,
+      startY: currentY,
+      margin: { left: margin, right: margin, bottom: 15 },
+      styles: { fontSize: 7, cellPadding: 1.5 },
+      headStyles: { fillColor: [13, 148, 136], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: [240, 253, 250] },
+    });
+
+    // @ts-ignore
+    currentY = doc.lastAutoTable.finalY + 6;
+
+    // 5. Signature / Institutional stamps block
+    if (currentY > pageHeight - 40) {
+      doc.addPage();
+      drawHeader();
+      currentY = 34;
+    }
+
+    const sigY = Math.max(currentY + 12, pageHeight - 35);
+    const sigColWidth = (pageWidth - margin * 2) / 3;
+
+    // Line 1: Digitador
+    doc.setDrawColor(148, 163, 184);
+    doc.setLineWidth(0.3);
+    doc.line(margin + 10, sigY, margin + sigColWidth - 10, sigY);
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text(data.digitador.nombre, margin + sigColWidth / 2, sigY + 3.5, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Digitador Responsable', margin + sigColWidth / 2, sigY + 7, { align: 'center' });
+
+    // Line 2: Responsable Punto de Digitación
+    const sig2X = margin + sigColWidth;
+    doc.line(sig2X + 10, sigY, sig2X + sigColWidth - 10, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('V°B° Responsable', sig2X + sigColWidth / 2, sigY + 3.5, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Punto: ${data.digitador.codPunto}`, sig2X + sigColWidth / 2, sigY + 7, { align: 'center' });
+
+    // Line 3: Coordinador Estadística
+    const sig3X = margin + sigColWidth * 2;
+    doc.line(sig3X + 10, sigY, sig3X + sigColWidth - 10, sigY);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('V°B° Estadística e Informática', sig3X + sigColWidth / 2, sigY + 3.5, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Red de Salud / DIRIS / DIRESA', sig3X + sigColWidth / 2, sigY + 7, { align: 'center' });
+
+    // Page numbering and footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Página ${i} de ${totalPagesExp}`, margin, pageHeight - 5);
+      doc.text(
+        `Ficha Oficial MINSA/SIS • Digitador: ${data.digitador.nombre} • ${data.digitador.puntoDigitacion}`,
+        pageWidth - margin - 85,
+        pageHeight - 5
+      );
+    }
+
+    if (typeof doc.putTotalPages === 'function') {
+      doc.putTotalPages(totalPagesExp);
+    }
+
+    const cleanName = data.digitador.nombre.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 25);
+    doc.save(`Ficha_Estadistica_Digitador_${cleanName}_${now.toISOString().substring(0, 10)}.pdf`);
+  }
 }
 

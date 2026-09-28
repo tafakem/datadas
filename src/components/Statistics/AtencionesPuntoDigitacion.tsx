@@ -29,6 +29,7 @@ interface Props {
   initialPunto?: string;
   onNavigateToOportunidad?: () => void;
   onNavigateToRegistroVsAtencion?: () => void;
+  onNavigateToDigitadores?: () => void;
 }
 
 // Helper to extract year, month and formatted label from fecha_registro
@@ -103,6 +104,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
   initialPunto,
   onNavigateToOportunidad,
   onNavigateToRegistroVsAtencion,
+  onNavigateToDigitadores,
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedPunto, setSelectedPunto] = useState<string>(initialPunto || 'TODOS');
@@ -635,6 +637,16 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
               <FileText className="w-3.5 h-3.5" />
               <span>Exportar PDF</span>
             </button>
+            {onNavigateToDigitadores && (
+              <button
+                onClick={onNavigateToDigitadores}
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                title="Ver estadísticas y rendimiento por digitador (verificando fecha de atención)"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>B.2.1 Estadísticas por Digitador</span>
+              </button>
+            )}
           </div>
         </div>
 

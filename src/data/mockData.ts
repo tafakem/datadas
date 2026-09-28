@@ -1,4 +1,4 @@
-import { Atencion, User, AuditLog, DistrictCoverage } from '../types/health';
+import { Atencion, User, AuditLog, DistrictCoverage, DigitadorRecord } from '../types/health';
 
 export const INITIAL_USERS: User[] = [
   {
@@ -60,17 +60,104 @@ export const INITIAL_LOGS: AuditLog[] = [
   },
 ];
 
+export const INITIAL_DIGITADORES: DigitadorRecord[] = [
+  {
+    id: 'dig-1',
+    dni: '45892134',
+    nombre_completo: 'Lic. Patricia Vega Salas',
+    cod_punto_digitacion: 'PTO-DIG-01',
+    punto_digitacion: 'DIGITACIÓN SAN MARTÍN',
+    codigo_eess: '00001245',
+    nombre_eess: 'C.S. SAN MARTIN DE PORRES',
+    cargo: 'Digitador Asistencial SIS Principal',
+    estado: 'ACTIVO',
+    correo: 'pvega.digitacion@minsa.gob.pe',
+    telefono: '984512367',
+    fecha_creacion: '2026-01-15 08:00:00',
+  },
+  {
+    id: 'dig-2',
+    dni: '41852963',
+    nombre_completo: 'Tec. Julio Quispe Peña',
+    cod_punto_digitacion: 'PTO-DIG-01',
+    punto_digitacion: 'DIGITACIÓN SAN MARTÍN',
+    codigo_eess: '00003189',
+    nombre_eess: 'C.S. CONDEVILLA',
+    cargo: 'Técnico de Cómputo y Digitación',
+    estado: 'ACTIVO',
+    correo: 'jquispe.digitador@minsa.gob.pe',
+    telefono: '958471236',
+    fecha_creacion: '2026-02-01 08:30:00',
+  },
+  {
+    id: 'dig-3',
+    dni: '70258142',
+    nombre_completo: 'Tec. Marco Aurelio Soto',
+    cod_punto_digitacion: 'PTO-DIG-02',
+    punto_digitacion: 'DIGITACIÓN JESÚS MARÍA',
+    codigo_eess: '00004512',
+    nombre_eess: 'C.S. JESUS MARIA',
+    cargo: 'Técnico en Informática y Digitación',
+    estado: 'ACTIVO',
+    correo: 'msoto.digitacion@minsa.gob.pe',
+    telefono: '971254896',
+    fecha_creacion: '2026-01-10 09:00:00',
+  },
+  {
+    id: 'dig-4',
+    dni: '48963251',
+    nombre_completo: 'Bach. Andrea Vivanco',
+    cod_punto_digitacion: 'PTO-DIG-03',
+    punto_digitacion: 'DIGITACIÓN HOSP CAYETANO',
+    codigo_eess: '00005698',
+    nombre_eess: 'HOSPITAL CAYETANO HEREDIA',
+    cargo: 'Digitador Hospitalario SIS',
+    estado: 'ACTIVO',
+    correo: 'avivanco.hch@minsa.gob.pe',
+    telefono: '992145789',
+    fecha_creacion: '2026-01-20 07:45:00',
+  },
+  {
+    id: 'dig-5',
+    dni: '43215689',
+    nombre_completo: 'Ing. Carlos Gutierrez Miranda',
+    cod_punto_digitacion: 'PTO-DIG-04',
+    punto_digitacion: 'DIGITACIÓN CALLAO',
+    codigo_eess: '00007812',
+    nombre_eess: 'C.S. BELLAVISTA',
+    cargo: 'Especialista en Sistemas y Digitación',
+    estado: 'ACTIVO',
+    correo: 'cgutierrez.callao@minsa.gob.pe',
+    telefono: '965412893',
+    fecha_creacion: '2026-02-15 08:15:00',
+  },
+  {
+    id: 'dig-6',
+    dni: '72145896',
+    nombre_completo: 'Lic. Lorena Rojas Ramos',
+    cod_punto_digitacion: 'PTO-DIG-05',
+    punto_digitacion: 'DIGITACIÓN V.E.S.',
+    codigo_eess: '00006321',
+    nombre_eess: 'C.S. VILLA EL SALVADOR',
+    cargo: 'Digitador de Admisión y SIS',
+    estado: 'ACTIVO',
+    correo: 'lrojas.ves@minsa.gob.pe',
+    telefono: '941258745',
+    fecha_creacion: '2026-03-01 08:00:00',
+  },
+];
+
 // Helper to generate seed dataset
 const generateMockAtenciones = (): Atencion[] => {
   const eessList = [
-    { cod: '00001245', nombre: 'C.S. SAN MARTIN DE PORRES', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-01', ptoNom: 'DIGITACIÓN SAN MARTÍN' },
-    { cod: '00003189', nombre: 'C.S. CONDEVILLA', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-01', ptoNom: 'DIGITACIÓN SAN MARTÍN' },
-    { cod: '00004512', nombre: 'C.S. JESUS MARIA', disa: 'DIRIS LIMA CENTRO', pto: 'PTO-DIG-02', ptoNom: 'DIGITACIÓN JESÚS MARÍA' },
-    { cod: '00002874', nombre: 'C.S. BREÑA', disa: 'DIRIS LIMA CENTRO', pto: 'PTO-DIG-02', ptoNom: 'DIGITACIÓN JESÚS MARÍA' },
-    { cod: '00005698', nombre: 'HOSPITAL CAYETANO HEREDIA', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-03', ptoNom: 'DIGITACIÓN HOSP CAYETANO' },
-    { cod: '00007812', nombre: 'C.S. BELLAVISTA', disa: 'DIRESA CALLAO', pto: 'PTO-DIG-04', ptoNom: 'DIGITACIÓN CALLAO' },
-    { cod: '00006321', nombre: 'C.S. VILLA EL SALVADOR', disa: 'DIRIS LIMA SUR', pto: 'PTO-DIG-05', ptoNom: 'DIGITACIÓN V.E.S.' },
-    { cod: '00008945', nombre: 'P.S. LAS LOMAS', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-01', ptoNom: 'DIGITACIÓN SAN MARTÍN' }
+    { cod: '00001245', nombre: 'C.S. SAN MARTIN DE PORRES', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-01', ptoNom: 'DIGITACIÓN SAN MARTÍN', digitadores: ['Lic. Patricia Vega Salas', 'Tec. Julio Quispe Peña'] },
+    { cod: '00003189', nombre: 'C.S. CONDEVILLA', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-01', ptoNom: 'DIGITACIÓN SAN MARTÍN', digitadores: ['Tec. Julio Quispe Peña', 'Lic. Patricia Vega Salas'] },
+    { cod: '00004512', nombre: 'C.S. JESUS MARIA', disa: 'DIRIS LIMA CENTRO', pto: 'PTO-DIG-02', ptoNom: 'DIGITACIÓN JESÚS MARÍA', digitadores: ['Tec. Marco Aurelio Soto'] },
+    { cod: '00002874', nombre: 'C.S. BREÑA', disa: 'DIRIS LIMA CENTRO', pto: 'PTO-DIG-02', ptoNom: 'DIGITACIÓN JESÚS MARÍA', digitadores: ['Tec. Marco Aurelio Soto'] },
+    { cod: '00005698', nombre: 'HOSPITAL CAYETANO HEREDIA', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-03', ptoNom: 'DIGITACIÓN HOSP CAYETANO', digitadores: ['Bach. Andrea Vivanco'] },
+    { cod: '00007812', nombre: 'C.S. BELLAVISTA', disa: 'DIRESA CALLAO', pto: 'PTO-DIG-04', ptoNom: 'DIGITACIÓN CALLAO', digitadores: ['Ing. Carlos Gutierrez Miranda'] },
+    { cod: '00006321', nombre: 'C.S. VILLA EL SALVADOR', disa: 'DIRIS LIMA SUR', pto: 'PTO-DIG-05', ptoNom: 'DIGITACIÓN V.E.S.', digitadores: ['Lic. Lorena Rojas Ramos'] },
+    { cod: '00008945', nombre: 'P.S. LAS LOMAS', disa: 'DIRIS LIMA NORTE', pto: 'PTO-DIG-01', ptoNom: 'DIGITACIÓN SAN MARTÍN', digitadores: ['Lic. Patricia Vega Salas'] },
   ];
 
   const servicios = [
@@ -115,18 +202,18 @@ const generateMockAtenciones = (): Atencion[] => {
     { nom: 'CASTRO VILCA LUIS ALBERTO', sexo: 'MASCULINO' as const, edad: 23, cond: 'NO APLICA' },
   ];
 
-  const digitadores = ['Lic. Patricia Vega Salas', 'Tec. Marco Aurelio Soto', 'Bach. Andrea Vivanco'];
   const months = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09'];
   const atenciones: Atencion[] = [];
 
   let idCounter = 1;
 
-  for (let i = 0; i < 180; i++) {
+  for (let i = 0; i < 200; i++) {
     const eess = eessList[i % eessList.length];
     const srv = servicios[i % servicios.length];
     const prof = profesionales[i % profesionales.length];
     const pac = nombresPacientes[i % nombresPacientes.length];
     const month = months[i % months.length];
+    const digitadorName = eess.digitadores[i % eess.digitadores.length];
     
     // Day in month between 01 and 28
     const day = String((i % 27) + 1).padStart(2, '0');
@@ -140,52 +227,52 @@ const generateMockAtenciones = (): Atencion[] => {
     const isExtramural = i % 7 === 0;
     const isHospitalizado = (i % 11 === 0 && srv.cod !== '002');
 
-      // Generación realista de oportunidad de digitación (0-10 días, 11-29 días, 30+ días)
-      let delayDays = i % 9; // 0-8 días (rango 0-10 días, ~60%)
-      if (i % 7 === 0) {
-        delayDays = 30 + ((i * 5) % 35); // 30 - 64 días (rango 30+ días, ~15%)
-      } else if (i % 4 === 0) {
-        delayDays = 11 + ((i * 3) % 18); // 11 - 28 días (rango 11-29 días, ~25%)
-      }
+    // Generación realista de oportunidad de digitación (0-10 días, 11-29 días, 30+ días)
+    let delayDays = i % 9; // 0-8 días (rango 0-10 días, ~60%)
+    if (i % 7 === 0) {
+      delayDays = 30 + ((i * 5) % 35); // 30 - 64 días (rango 30+ días, ~15%)
+    } else if (i % 4 === 0) {
+      delayDays = 11 + ((i * 3) % 18); // 11 - 28 días (rango 11-29 días, ~25%)
+    }
 
-      const dAtencion = new Date(`${fechaAtencion}T${hora}`);
-      const dRegistro = new Date(dAtencion.getTime() + delayDays * 24 * 60 * 60 * 1000);
-      const regYear = dRegistro.getFullYear();
-      const regMonth = String(dRegistro.getMonth() + 1).padStart(2, '0');
-      const regDay = String(dRegistro.getDate()).padStart(2, '0');
-      const regHora = `${String(8 + ((i * 3) % 10)).padStart(2, '0')}:${String((i * 13) % 60).padStart(2, '0')}:00`;
-      const fechaRegistro = `${regYear}-${regMonth}-${regDay} ${regHora}`;
+    const dAtencion = new Date(`${fechaAtencion}T${hora}`);
+    const dRegistro = new Date(dAtencion.getTime() + delayDays * 24 * 60 * 60 * 1000);
+    const regYear = dRegistro.getFullYear();
+    const regMonth = String(dRegistro.getMonth() + 1).padStart(2, '0');
+    const regDay = String(dRegistro.getDate()).padStart(2, '0');
+    const regHora = `${String(8 + ((i * 3) % 10)).padStart(2, '0')}:${String((i * 13) % 60).padStart(2, '0')}:00`;
+    const fechaRegistro = `${regYear}-${regMonth}-${regDay} ${regHora}`;
 
-      atenciones.push({
-        id: idCounter,
-        nro_formato: `F-${month.replace('-', '')}-${String(1000 + idCounter).padStart(5, '0')}`,
-        fecha_atencion: fechaAtencion,
-        hora_atencion: hora,
-        tipo_doc: 'DNI',
-        doc_identidad: String(70000000 + (idCounter * 1234) % 9999999),
-        contrato: `SIS-${20260000 + idCounter}`,
-        beneficiario: pac.nom,
-        fecha_nacimiento: fechaNac,
-        edad: pac.edad,
-        sexo: pac.sexo,
-        codigo_eess: eess.cod,
-        nombre_eess: eess.nombre,
-        cod_servicio: srv.cod,
-        descripcion_servicio: srv.desc,
-        dni_profesional: prof.dni,
-        nombre_profesional: prof.nombre,
-        tipo_profesional: prof.tipo,
-        colegiatura: prof.col,
-        rne: prof.rne,
-        tarifa: srv.tarifa,
-        historia_clinica: `HC-${10000 + (idCounter % 500)}`,
-        componente: i % 10 === 0 ? 'SEMISUBSIDIADO' : 'SUBSIDIADO',
-        condicion_materna: pac.sexo === 'FEMENINO' && pac.edad >= 15 && pac.edad <= 49 ? pac.cond : 'NO APLICA',
-        tipo_atencion: isHospitalizado ? 'HOSPITALIZADO' : 'AMBULATORIO',
-        lugar_atencion: isExtramural ? 'EXTRAMURAL' : 'INTRAMURAL',
-        eess_referencia: i % 8 === 0 ? 'HOSPITAL NACIONAL ARZOBISPO LOAYZA' : '',
-        fecha_registro: fechaRegistro,
-      digitador: digitadores[i % digitadores.length],
+    atenciones.push({
+      id: idCounter,
+      nro_formato: `F-${month.replace('-', '')}-${String(1000 + idCounter).padStart(5, '0')}`,
+      fecha_atencion: fechaAtencion,
+      hora_atencion: hora,
+      tipo_doc: 'DNI',
+      doc_identidad: String(70000000 + (idCounter * 1234) % 9999999),
+      contrato: `SIS-${20260000 + idCounter}`,
+      beneficiario: pac.nom,
+      fecha_nacimiento: fechaNac,
+      edad: pac.edad,
+      sexo: pac.sexo,
+      codigo_eess: eess.cod,
+      nombre_eess: eess.nombre,
+      cod_servicio: srv.cod,
+      descripcion_servicio: srv.desc,
+      dni_profesional: prof.dni,
+      nombre_profesional: prof.nombre,
+      tipo_profesional: prof.tipo,
+      colegiatura: prof.col,
+      rne: prof.rne,
+      tarifa: srv.tarifa,
+      historia_clinica: `HC-${10000 + (idCounter % 500)}`,
+      componente: i % 10 === 0 ? 'SEMISUBSIDIADO' : 'SUBSIDIADO',
+      condicion_materna: pac.sexo === 'FEMENINO' && pac.edad >= 15 && pac.edad <= 49 ? pac.cond : 'NO APLICA',
+      tipo_atencion: isHospitalizado ? 'HOSPITALIZADO' : 'AMBULATORIO',
+      lugar_atencion: isExtramural ? 'EXTRAMURAL' : 'INTRAMURAL',
+      eess_referencia: i % 8 === 0 ? 'HOSPITAL NACIONAL ARZOBISPO LOAYZA' : '',
+      fecha_registro: fechaRegistro,
+      digitador: digitadorName,
       nro_cred: srv.cod === '002' ? `CRED-${100 + idCounter}` : '',
       usuario_actualiza: i % 15 === 0 ? 'admin' : undefined,
       fecha_actualiza: i % 15 === 0 ? '2026-09-22 14:00:00' : undefined,

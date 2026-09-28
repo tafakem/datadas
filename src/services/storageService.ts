@@ -1,14 +1,16 @@
-import { Atencion, User, AuditLog, DistrictCoverage } from '../types/health';
-import { INITIAL_ATENCIONES, INITIAL_USERS, INITIAL_LOGS, INITIAL_DISTRICTS } from '../data/mockData';
+import { Atencion, User, AuditLog, DistrictCoverage, DigitadorRecord } from '../types/health';
+import { INITIAL_ATENCIONES, INITIAL_USERS, INITIAL_LOGS, INITIAL_DISTRICTS, INITIAL_DIGITADORES } from '../data/mockData';
 
 const ATENCIONES_KEY = 'minsa_estadisticas_atenciones_v2';
 const USERS_KEY = 'minsa_estadisticas_usuarios_v1';
 const LOGS_KEY = 'minsa_estadisticas_logs_v1';
 const CURRENT_USER_KEY = 'minsa_estadisticas_current_user_v1';
 const DISTRICTS_KEY = 'minsa_estadisticas_distritos_v1';
+const DIGITADORES_KEY = 'minsa_estadisticas_digitadores_v1';
 
 class StorageService {
   private cacheAtenciones: Atencion[] | null = null;
+  private cacheDigitadores: DigitadorRecord[] | null = null;
 
   getAtenciones(): Atencion[] {
     if (this.cacheAtenciones && this.cacheAtenciones.length > 0) {
@@ -115,6 +117,118 @@ class StorageService {
       this.saveAtenciones(actuales);
     }
   }
+
+  // ===================== MAESTRO DE DIGITADORES =====================
+
+  getDigitadores(): DigitadorRecord[] {
+    if (this.cacheDigitadores && this.cacheDigitadores.length > 0) {
+      return this.cacheDigitadores;
+    }
+    try {
+      const data = localStorage.getItem(DIGITADORES_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.cacheDigitadores = parsed;
+          return this.cacheDigitadores;
+        }
+      }
+    } catch (e) {
+      console.error('Error reading digitadores:', e);
+    }
+    this.cacheDigitadores = [...INITIAL_DIGITADORES];
+    this.saveDigitadores(this.cacheDigitadores);
+    return this.cacheDigitadores;
+  }
+
+  saveDigitadores(digitadores: DigitadorRecord[]): void {
+    this.cacheDigitadores = digitadores;
+    try {
+      localStorage.setItem(DIGITADORES_KEY, JSON.stringify(digitadores));
+    } catch (e) {
+      console.error('Error saving digitadores:', e);
+    }
+  }
+
+  addOrUpdateDigitadores(nuevos: Omit<DigitadorRecord, 'id'>[]): { added: number; updated: number } {
+    const actuales = this.getDigitadores();
+    let added = 0;
+    let updated = 0;
+
+    const normalize = (s: string) => s.trim().toLowerCase().replace(/^(lic\.|tec\.|bach\.|dr\.|dra\.|ing\.)\s*/i, '');
+
+    const result = [...actuales];
+
+    for (const item of nuevos) {
+      // Find by DNI or normalized name
+      const existingIdx = result.findIndex(d => 
+        (item.dni && d.dni && d.dni.trim() === item.dni.trim()) ||
+        (normalize(d.nombre_completo) === normalize(item.nombre_completo))
+      );
+
+      const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+      if (existingIdx !== -1) {
+        result[existingIdx] = {
+          ...result[existingIdx],
+          ...item,
+          id: result[existingIdx].id,
+          fecha_actualizacion: nowStr,
+        };
+        updated++;
+      } else {
+        const newRecord: DigitadorRecord = {
+          ...item,
+          id: `dig-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          fecha_creacion: nowStr,
+          fecha_actualizacion: nowStr,
+        };
+        result.push(newRecord);
+        added++;
+      }
+    }
+
+    this.saveDigitadores(result);
+    return { added, updated };
+  }
+
+  addDigitador(digitador: Omit<DigitadorRecord, 'id'>): DigitadorRecord {
+    const list = this.getDigitadores();
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const newRecord: DigitadorRecord = {
+      ...digitador,
+      id: `dig-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      fecha_creacion: nowStr,
+      fecha_actualizacion: nowStr,
+    };
+    list.push(newRecord);
+    this.saveDigitadores(list);
+    return newRecord;
+  }
+
+  updateDigitador(digitador: DigitadorRecord): void {
+    const list = this.getDigitadores();
+    const idx = list.findIndex(d => d.id === digitador.id);
+    if (idx !== -1) {
+      list[idx] = {
+        ...digitador,
+        fecha_actualizacion: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      };
+      this.saveDigitadores(list);
+    }
+  }
+
+  deleteDigitador(id: string): boolean {
+    const list = this.getDigitadores();
+    const filtered = list.filter(d => d.id !== id);
+    if (filtered.length !== list.length) {
+      this.saveDigitadores(filtered);
+      return true;
+    }
+    return false;
+  }
+
+  // ===================== USUARIOS =====================
 
   getUsers(): User[] {
     try {
@@ -236,7 +350,9 @@ class StorageService {
 
   resetToDefaultData(): void {
     this.cacheAtenciones = null;
+    this.cacheDigitadores = null;
     this.saveAtenciones(INITIAL_ATENCIONES);
+    this.saveDigitadores(INITIAL_DIGITADORES);
     this.saveUsers(INITIAL_USERS);
     this.saveAuditLogs(INITIAL_LOGS);
     localStorage.setItem(DISTRICTS_KEY, JSON.stringify(INITIAL_DISTRICTS));
@@ -244,9 +360,10 @@ class StorageService {
 
   exportFullBackup(): string {
     return JSON.stringify({
-      version: '1.0',
+      version: '1.1',
       exported_at: new Date().toISOString(),
       atenciones: this.getAtenciones(),
+      digitadores: this.getDigitadores(),
       usuarios: this.getUsers(),
       auditoria_logs: this.getAuditLogs(),
       distritos: this.getDistricts(),
@@ -258,6 +375,9 @@ class StorageService {
       const parsed = JSON.parse(jsonContent);
       if (parsed.atenciones && Array.isArray(parsed.atenciones)) {
         this.saveAtenciones(parsed.atenciones);
+      }
+      if (parsed.digitadores && Array.isArray(parsed.digitadores)) {
+        this.saveDigitadores(parsed.digitadores);
       }
       if (parsed.usuarios && Array.isArray(parsed.usuarios)) {
         this.saveUsers(parsed.usuarios);

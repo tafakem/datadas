@@ -138,8 +138,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                     Módulos Estadísticos
                   </div>
                   <button onClick={() => handleNavClick('stats-mes-eess')} className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-blue-600 hover:text-white flex items-center justify-between">
-                    <span>B.1. Por Mes y EESS</span>
-                    <span className="text-[10px] text-slate-400 group-hover:text-white">Matriz</span>
+                    <span>B.1. Atenciones vs Atendidos por EESS</span>
+                    <span className="text-[10px] text-emerald-400 group-hover:text-white font-semibold">Comparativo</span>
                   </button>
                   <button onClick={() => handleNavClick('stats-punto-dig')} className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-blue-600 hover:text-white flex items-center justify-between">
                     <span>B.2. Por Punto de Digitación</span>
@@ -369,7 +369,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             Estadísticas
           </div>
           <div className="grid grid-cols-2 gap-1 px-1">
-            <button onClick={() => handleNavClick('stats-mes-eess')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.1 Mes y EESS</button>
+            <button onClick={() => handleNavClick('stats-mes-eess')} className="text-left px-2 py-1.5 rounded text-xs text-emerald-300 font-bold hover:bg-slate-800">B.1 Atenciones vs Atendidos (EESS)</button>
             <button onClick={() => handleNavClick('stats-punto-dig')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.2 Punto Digitación</button>
             <button onClick={() => handleNavClick('stats-profesional')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.3 Profesional</button>
             <button onClick={() => handleNavClick('stats-servicio')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.4 Servicio</button>

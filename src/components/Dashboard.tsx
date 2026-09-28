@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Users
 } from 'lucide-react';
 import { Atencion } from '../types/health';
 
@@ -34,6 +35,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
   const [chartMetric, setChartMetric] = useState<'atenciones' | 'tarifas'>('atenciones');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isWideChart, setIsWideChart] = useState<boolean>(true);
+  const [eessChartLimit, setEessChartLimit] = useState<number>(6);
+  const [eessMetricMode, setEessMetricMode] = useState<'ambos' | 'atenciones' | 'atendidos'>('ambos');
 
   // Auto-refresh countdown (every 5 minutes as specified)
   useEffect(() => {
@@ -126,6 +129,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
     .slice(0, 6);
   const maxServiceVal = Math.max(...sortedServices.map(s => s[1]), 1);
 
+  // Atenciones vs Atendidos por EESS calculation
+  const { eessAtencionesVsAtendidos, totalPacientesUnicos, globalConcentracion, maxEessAtenciones, maxEessAtendidos } = useMemo(() => {
+    const eessMap: Record<string, { atenciones: number; pacientes: Set<string>; disa: string; tarifas: number }> = {};
+    const globalPacientes = new Set<string>();
+
+    for (let i = 0; i < atenciones.length; i++) {
+      const a = atenciones[i];
+      const eess = (a.nombre_eess || 'Sin EESS').trim();
+      const doc = (a.doc_identidad || a.beneficiario || String(a.id)).trim();
+
+      if (!eessMap[eess]) {
+        eessMap[eess] = { atenciones: 0, pacientes: new Set(), disa: a.disa || 'MINSA', tarifas: 0 };
+      }
+      eessMap[eess].atenciones += 1;
+      if (doc) {
+        eessMap[eess].pacientes.add(doc);
+        globalPacientes.add(doc);
+      }
+      eessMap[eess].tarifas += Number(a.tarifa) || 0;
+    }
+
+    const list = Object.entries(eessMap).map(([nombre, data]) => {
+      const atendidos = data.pacientes.size || 1;
+      const atencionesCount = data.atenciones;
+      const concentracion = atendidos > 0 ? Number((atencionesCount / atendidos).toFixed(2)) : 1.0;
+      return {
+        nombre,
+        disa: data.disa,
+        atenciones: atencionesCount,
+        atendidos,
+        concentracion,
+        tarifas: data.tarifas,
+      };
+    }).sort((a, b) => b.atenciones - a.atenciones);
+
+    const maxAtenc = Math.max(...list.map(e => e.atenciones), 1);
+    const maxAtend = Math.max(...list.map(e => e.atendidos), 1);
+    const totalAtend = globalPacientes.size || 1;
+    const globalConc = totalAcumulado > 0 ? (totalAcumulado / totalAtend).toFixed(2) : '1.00';
+
+    return {
+      eessAtencionesVsAtendidos: list,
+      totalPacientesUnicos: globalPacientes.size,
+      globalConcentracion: globalConc,
+      maxEessAtenciones: maxAtenc,
+      maxEessAtendidos: maxAtend,
+    };
+  }, [atenciones, totalAcumulado]);
+
   // Opportunity stats (0-10d, 11-29d, 30+d)
   let count0_10 = 0;
   let count11_29 = 0;
@@ -197,6 +249,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
             <p className="text-slate-300 text-sm mt-1 max-w-2xl">
               Monitoreo en tiempo real de atenciones médicas, cumplimiento de metas de cobertura institucional y distribución de servicios de salud.
             </p>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-blue-200 text-xs font-medium border border-blue-400/30">
+                <Activity className="w-3.5 h-3.5 text-blue-300" />
+                <span>Atenciones: <strong className="text-white font-mono">{totalAcumulado.toLocaleString()}</strong></span>
+              </span>
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 text-xs font-medium border border-emerald-400/30">
+                <Users className="w-3.5 h-3.5 text-emerald-300" />
+                <span>Atendidos: <strong className="text-white font-mono">{totalPacientesUnicos.toLocaleString()}</strong></span>
+              </span>
+              <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs font-medium border border-purple-400/30">
+                <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                <span>Concentración: <strong className="text-white font-mono">{globalConcentracion} at./pte.</strong></span>
+              </span>
+              <button
+                onClick={() => onNavigate('stats-mes-eess')}
+                className="inline-flex items-center space-x-1 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors cursor-pointer border border-white/20"
+                title="Ir al módulo estadístico B.1 Atenciones vs Atendidos por EESS"
+              >
+                <span>Ver Atenciones vs Atendidos por EESS</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -821,6 +895,260 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
           </div>
         </div>
 
+      </div>
+
+      {/* Gráfico / Panel: Atenciones Vs Atendidos por Establecimiento en Salud (EESS) */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                <Building2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+                Atenciones Vs Atendidos por Establecimiento en Salud (EESS)
+              </h2>
+              <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center space-x-1">
+                <Users className="w-3 h-3 text-emerald-700" />
+                <span>Comparativo de Cobertura</span>
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+              Análisis institucional que compara el volumen de consultas/prestaciones (Atenciones) frente a la población única cubierta (Atendidos) y el índice de concentración (Atenciones ÷ Atendidos).
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Visual Legend */}
+            {eessMetricMode === 'ambos' && (
+              <div className="flex items-center space-x-3 text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                <span className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-blue-600 inline-block"></span>
+                  <span>Atenciones</span>
+                </span>
+                <span className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block"></span>
+                  <span>Atendidos (Únicos)</span>
+                </span>
+              </div>
+            )}
+
+            {/* Metric Mode Filter */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
+              <button
+                onClick={() => setEessMetricMode('ambos')}
+                className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+                  eessMetricMode === 'ambos'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-blue-600" />
+                <span>Atenciones vs Atendidos</span>
+              </button>
+              <button
+                onClick={() => setEessMetricMode('atenciones')}
+                className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  eessMetricMode === 'atenciones'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Solo Atenciones
+              </button>
+              <button
+                onClick={() => setEessMetricMode('atendidos')}
+                className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  eessMetricMode === 'atendidos'
+                    ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Solo Atendidos
+              </button>
+            </div>
+
+            {/* Quantity Limit */}
+            <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
+              <button
+                onClick={() => setEessChartLimit(6)}
+                className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  eessChartLimit === 6 ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Top 6
+              </button>
+              <button
+                onClick={() => setEessChartLimit(12)}
+                className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  eessChartLimit === 12 ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Top 12
+              </button>
+              <button
+                onClick={() => setEessChartLimit(eessAtencionesVsAtendidos.length || 50)}
+                className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  eessChartLimit > 12 ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Todos ({eessAtencionesVsAtendidos.length})
+              </button>
+            </div>
+
+            {/* Direct module link */}
+            <button
+              onClick={() => onNavigate('stats-mes-eess')}
+              className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-blue-600 text-white font-bold text-xs flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
+              title="Abrir matriz detallada B.1 con exportación a Excel y PDF"
+            >
+              <span>Ver Módulo Completo B.1</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Mini Summary Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Total Atenciones</span>
+            <div className="text-xl font-extrabold font-mono text-blue-700 mt-0.5">{totalAcumulado.toLocaleString()}</div>
+            <span className="text-[10px] text-slate-500">Volumen prestacional</span>
+          </div>
+
+          <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Pacientes Atendidos</span>
+            <div className="text-xl font-extrabold font-mono text-emerald-700 mt-0.5">{totalPacientesUnicos.toLocaleString()}</div>
+            <span className="text-[10px] text-slate-500">Personas únicas cubiertas</span>
+          </div>
+
+          <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Concentración Global</span>
+            <div className="text-xl font-extrabold font-mono text-purple-700 mt-0.5">{globalConcentracion}</div>
+            <span className="text-[10px] text-slate-500">Atenciones por atendido</span>
+          </div>
+
+          <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/70">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Establecimientos (EESS)</span>
+            <div className="text-xl font-extrabold font-mono text-indigo-700 mt-0.5">{eessAtencionesVsAtendidos.length}</div>
+            <span className="text-[10px] text-slate-500">Centros y puestos de salud</span>
+          </div>
+        </div>
+
+        {/* List of EESS with Dual Comparison Bars */}
+        <div className="space-y-3.5 pt-1">
+          {eessAtencionesVsAtendidos.length === 0 ? (
+            <p className="text-xs text-slate-400 py-8 text-center">No se encontraron atenciones registradas para mostrar.</p>
+          ) : (
+            eessAtencionesVsAtendidos.slice(0, eessChartLimit).map((item, idx) => {
+              const pctAtenc = totalAcumulado > 0 ? Math.round((item.atenciones / totalAcumulado) * 100) : 0;
+              const pctAtend = totalPacientesUnicos > 0 ? Math.round((item.atendidos / totalPacientesUnicos) * 100) : 0;
+              
+              // Direct proportionate scale relative to maxEessAtenciones
+              const barWidthAtenc = Math.max(Math.round((item.atenciones / maxEessAtenciones) * 100), 4);
+              const barWidthAtend = Math.max(Math.round((item.atendidos / maxEessAtenciones) * 100), 4);
+
+              return (
+                <div 
+                  key={item.nombre} 
+                  className="p-3 rounded-xl bg-slate-50/50 hover:bg-blue-50/40 border border-slate-200/70 hover:border-blue-200 transition-all"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs mb-2">
+                    <div className="flex items-center space-x-2 truncate pr-2">
+                      <span className="font-mono font-bold text-slate-400 text-[11px] w-6 flex-shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <Building2 className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                      <span className="font-bold text-slate-900 truncate" title={item.nombre}>
+                        {item.nombre}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-600 font-medium">
+                        {item.disa || 'MINSA'}
+                      </span>
+                    </div>
+
+                    {eessMetricMode === 'ambos' ? (
+                      <div className="flex flex-wrap items-center gap-3 text-xs font-mono self-start sm:self-auto">
+                        <span className="text-blue-700 font-bold whitespace-nowrap">
+                          {item.atenciones.toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">atenc. ({pctAtenc}%)</span>
+                        </span>
+                        <span className="text-emerald-700 font-bold whitespace-nowrap">
+                          {item.atendidos.toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">atend. ({pctAtend}%)</span>
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          item.concentracion >= 2.0
+                            ? 'bg-purple-100 text-purple-800 border-purple-200'
+                            : item.concentracion >= 1.5
+                            ? 'bg-blue-100 text-blue-800 border-blue-200'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`} title="Índice de concentración: Promedio de atenciones por persona única">
+                          {item.concentracion} at./pte.
+                        </span>
+                      </div>
+                    ) : eessMetricMode === 'atenciones' ? (
+                      <span className="font-mono font-bold text-blue-700 whitespace-nowrap text-xs">
+                        {item.atenciones.toLocaleString()} atenciones <span className="text-[10px] text-slate-400 font-normal">({pctAtenc}%)</span>
+                      </span>
+                    ) : (
+                      <span className="font-mono font-bold text-emerald-700 whitespace-nowrap text-xs">
+                        {item.atendidos.toLocaleString()} pacientes atendidos <span className="text-[10px] text-slate-400 font-normal">({pctAtend}%)</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Dual comparison bars or single bar */}
+                  {eessMetricMode === 'ambos' ? (
+                    <div className="space-y-1.5">
+                      {/* Atenciones bar */}
+                      <div className="w-full bg-slate-200/70 rounded-full h-2 overflow-hidden" title={`Atenciones: ${item.atenciones.toLocaleString()}`}>
+                        <div 
+                          className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                          style={{ width: `${barWidthAtenc}%` }}
+                        ></div>
+                      </div>
+                      {/* Atendidos bar */}
+                      <div className="w-full bg-slate-200/70 rounded-full h-2 overflow-hidden" title={`Pacientes Atendidos: ${item.atendidos.toLocaleString()}`}>
+                        <div 
+                          className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                          style={{ width: `${barWidthAtend}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ) : eessMetricMode === 'atenciones' ? (
+                    <div className="w-full bg-slate-200/70 rounded-full h-2.5 overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                        style={{ width: `${barWidthAtenc}%` }}
+                      ></div>
+                    </div>
+                  ) : (
+                    <div className="w-full bg-slate-200/70 rounded-full h-2.5 overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                        style={{ width: `${barWidthAtend}%` }}
+                      ></div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Card Footer */}
+        <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="flex items-center space-x-2">
+            <span className="font-semibold text-slate-700">Nota técnica:</span>
+            <span>El índice de concentración refleja la intensidad de uso de servicios por paciente en el período seleccionado.</span>
+          </div>
+          <button
+            onClick={() => onNavigate('stats-mes-eess')}
+            className="text-blue-600 hover:text-blue-800 font-bold flex items-center space-x-1 cursor-pointer transition-colors"
+          >
+            <span>Ver matriz completa con desglose mensual por EESS</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Tabla: Últimas Atenciones Registradas */}

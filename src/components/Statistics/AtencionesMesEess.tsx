@@ -16,7 +16,10 @@ import {
   Eye,
   CheckCircle2,
   ChevronRight,
-  Filter
+  Filter,
+  Users,
+  UserCheck,
+  Activity
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { ExcelService } from '../../services/excelService';
@@ -44,19 +47,25 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     return sorted.length > 0 ? sorted : ['2026', '2025'];
   }, [atenciones]);
 
-  // Tab State: 'matriz' (EESS vs Mes), 'ranking' (EESS Ranking), 'meses' (Monthly Summary), 'detalle' (Individual Auditable Records)
-  const [activeTab, setActiveTab] = useState<'matriz' | 'ranking' | 'meses' | 'detalle'>('matriz');
+  // Tab State: 'matriz' (EESS vs Mes), 'comparativo' (Atenciones vs Atendidos), 'ranking' (EESS Ranking), 'meses' (Monthly Summary), 'detalle' (Individual Auditable Records)
+  const [activeTab, setActiveTab] = useState<'matriz' | 'comparativo' | 'ranking' | 'meses' | 'detalle'>('comparativo');
+
+  // Chart Metric Mode: 'atenciones_vs_atendidos' | 'solo_atenciones' | 'solo_atendidos'
+  const [chartMetricMode, setChartMetricMode] = useState<'atenciones_vs_atendidos' | 'solo_atenciones' | 'solo_atendidos'>('atenciones_vs_atendidos');
 
   // Filters State
   const [selectedYear, setSelectedYear] = useState<string>('TODOS');
   const [selectedEess, setSelectedEess] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'total_desc' | 'total_asc' | 'nombre_asc' | 'nombre_desc'>('total_desc');
+  const [sortBy, setSortBy] = useState<'total_desc' | 'total_asc' | 'atendidos_desc' | 'atendidos_asc' | 'concentracion_desc' | 'nombre_asc' | 'nombre_desc'>('total_desc');
   const [chartMode, setChartMode] = useState<'top10' | 'top20' | 'pagina'>('top10');
 
   // Distinct Pagination state for each tab
   const [pageMatriz, setPageMatriz] = useState<number>(1);
   const [pageSizeMatriz, setPageSizeMatriz] = useState<number>(15);
+
+  const [pageComparativo, setPageComparativo] = useState<number>(1);
+  const [pageSizeComparativo, setPageSizeComparativo] = useState<number>(15);
 
   const [pageRanking, setPageRanking] = useState<number>(1);
   const [pageSizeRanking, setPageSizeRanking] = useState<number>(15);
@@ -69,6 +78,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
 
   const resetAllPages = () => {
     setPageMatriz(1);
+    setPageComparativo(1);
     setPageRanking(1);
     setPageMeses(1);
     setPageDetalle(1);
@@ -85,21 +95,32 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     allEess, 
     matrix, 
     eessTotalsMap, 
+    eessAtendidosMap,
+    eessConcentracionMap,
+    eessTarifasMap,
     eessDisaMap,
     eessTopMonthMap,
     monthTotals, 
     monthActiveEessCount,
     monthTopEessMap,
     grandTotal, 
-    maxVal 
+    grandTotalAtendidos,
+    globalConcentracion,
+    grandTotalTarifas,
+    maxVal,
+    maxAtendidos
   } = useMemo(() => {
     const monthSet = new Set<string>();
     const eessSet = new Set<string>();
     const matrixMap: Record<string, Record<string, number>> = {};
     const eessTotals: Record<string, number> = {};
+    const eessPacientes: Record<string, Set<string>> = {};
+    const eessTarifas: Record<string, number> = {};
     const eessDisas: Record<string, string> = {};
     const monthTotalsMap: Record<string, number> = {};
+    const globalPacientes = new Set<string>();
     let totalCount = 0;
+    let totalTarifas = 0;
 
     for (let i = 0; i < atenciones.length; i++) {
       const a = atenciones[i];
@@ -115,14 +136,24 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
       if (selectedYear !== 'TODOS' && !period.startsWith(selectedYear)) continue;
 
       const eessName = (a.nombre_eess || 'EESS SIN NOMBRE').trim();
+      const docId = (a.doc_identidad || '').trim() || (a.beneficiario || '').trim() || `ID-${a.id}`;
 
       monthSet.add(period);
       eessSet.add(eessName);
+      globalPacientes.add(docId);
 
       if (!matrixMap[eessName]) matrixMap[eessName] = {};
       matrixMap[eessName][period] = (matrixMap[eessName][period] || 0) + 1;
 
       eessTotals[eessName] = (eessTotals[eessName] || 0) + 1;
+
+      if (!eessPacientes[eessName]) eessPacientes[eessName] = new Set<string>();
+      eessPacientes[eessName].add(docId);
+
+      const tarifaNum = Number(a.tarifa) || 0;
+      eessTarifas[eessName] = (eessTarifas[eessName] || 0) + tarifaNum;
+      totalTarifas += tarifaNum;
+
       if (a.disa && !eessDisas[eessName]) {
         eessDisas[eessName] = a.disa;
       }
@@ -133,6 +164,19 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     const sortedMonths = Array.from(monthSet).sort();
     const sortedEess = Array.from(eessSet).sort();
     const max = Math.max(...Object.values(eessTotals), 1);
+
+    const atendidosMap: Record<string, number> = {};
+    const concentracionMap: Record<string, number> = {};
+    sortedEess.forEach(e => {
+      const atendidos = eessPacientes[e]?.size || 0;
+      const atencionesCount = eessTotals[e] || 0;
+      atendidosMap[e] = atendidos;
+      concentracionMap[e] = atendidos > 0 ? Math.round((atencionesCount / atendidos) * 100) / 100 : 0;
+    });
+
+    const maxAtend = Math.max(...Object.values(atendidosMap), 1);
+    const totalAtendidos = globalPacientes.size;
+    const globalConc = totalAtendidos > 0 ? (totalCount / totalAtendidos).toFixed(2) : '0';
 
     // Compute top month for each EESS
     const topMonthByEess: Record<string, { month: string; count: number }> = {};
@@ -175,13 +219,20 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
       allEess: sortedEess,
       matrix: matrixMap,
       eessTotalsMap: eessTotals,
+      eessAtendidosMap: atendidosMap,
+      eessConcentracionMap: concentracionMap,
+      eessTarifasMap: eessTarifas,
       eessDisaMap: eessDisas,
       eessTopMonthMap: topMonthByEess,
       monthTotals: monthTotalsMap,
       monthActiveEessCount: activeEessByMonth,
       monthTopEessMap: topEessByMonth,
       grandTotal: totalCount,
+      grandTotalAtendidos: totalAtendidos,
+      globalConcentracion: globalConc,
+      grandTotalTarifas: totalTarifas,
       maxVal: max,
+      maxAtendidos: maxAtend,
     };
   }, [atenciones, selectedYear]);
 
@@ -197,13 +248,21 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     return [...list].sort((a, b) => {
       const totalA = eessTotalsMap[a] || 0;
       const totalB = eessTotalsMap[b] || 0;
+      const atendidosA = eessAtendidosMap[a] || 0;
+      const atendidosB = eessAtendidosMap[b] || 0;
+      const concA = eessConcentracionMap[a] || 0;
+      const concB = eessConcentracionMap[b] || 0;
+
       if (sortBy === 'total_desc') return totalB - totalA;
       if (sortBy === 'total_asc') return totalA - totalB;
+      if (sortBy === 'atendidos_desc') return atendidosB - atendidosA;
+      if (sortBy === 'atendidos_asc') return atendidosA - atendidosB;
+      if (sortBy === 'concentracion_desc') return concB - concA;
       if (sortBy === 'nombre_asc') return a.localeCompare(b);
       if (sortBy === 'nombre_desc') return b.localeCompare(a);
       return 0;
     });
-  }, [allEess, selectedEess, searchTerm, sortBy, eessTotalsMap]);
+  }, [allEess, selectedEess, searchTerm, sortBy, eessTotalsMap, eessAtendidosMap, eessConcentracionMap]);
 
   // 1. Paginated slice for Tab 1 (Matriz Cruzada)
   const paginatedMatrizList = useMemo(() => {
@@ -222,7 +281,13 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     return { byMonth, subtotal };
   }, [allMonths, paginatedMatrizList, matrix]);
 
-  // 2. Paginated slice for Tab 2 (Ranking EESS)
+  // 2. Paginated slice for Tab 2 (Atenciones vs Atendidos)
+  const paginatedComparativoList = useMemo(() => {
+    const start = (pageComparativo - 1) * pageSizeComparativo;
+    return filteredEessList.slice(start, start + pageSizeComparativo);
+  }, [filteredEessList, pageComparativo, pageSizeComparativo]);
+
+  // 3. Paginated slice for Tab 3 (Ranking EESS)
   const paginatedRankingList = useMemo(() => {
     const start = (pageRanking - 1) * pageSizeRanking;
     return filteredEessList.slice(start, start + pageSizeRanking);
@@ -298,6 +363,26 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
         return row;
       });
       ExcelService.exportToExcel(rows, `Matriz_Atenciones_Mes_EESS_${selectedYear}.xlsx`);
+    } else if (activeTab === 'comparativo') {
+      const rows = filteredEessList.map((e, idx) => {
+        const atencionesCount = eessTotalsMap[e] || 0;
+        const atendidosCount = eessAtendidosMap[e] || 0;
+        const concentracion = eessConcentracionMap[e] || 0;
+        const tarifa = eessTarifasMap[e] || 0;
+        return {
+          'Posición (#)': idx + 1,
+          'Establecimiento de Salud (EESS)': e,
+          'DISA / Región': eessDisaMap[e] || '—',
+          'Total Atenciones': atencionesCount,
+          '% Atenciones': grandTotal > 0 ? `${((atencionesCount / grandTotal) * 100).toFixed(2)}%` : '0%',
+          'Total Atendidos (Pacientes Únicos)': atendidosCount,
+          '% Atendidos': grandTotalAtendidos > 0 ? `${((atendidosCount / grandTotalAtendidos) * 100).toFixed(2)}%` : '0%',
+          'Concentración (Atenc./Atendido)': concentracion,
+          'Tarifas SIS Total (S/)': Number(tarifa).toFixed(2),
+          'Gasto Promedio por Atendido (S/)': atendidosCount > 0 ? (tarifa / atendidosCount).toFixed(2) : '0.00',
+        };
+      });
+      ExcelService.exportToExcel(rows, `Atenciones_vs_Atendidos_EESS_${selectedYear}.xlsx`);
     } else if (activeTab === 'ranking') {
       const rows = filteredEessList.map((e, idx) => {
         const total = eessTotalsMap[e] || 0;
@@ -376,6 +461,32 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
         ],
         orientation: 'landscape',
         filename: `Matriz_Atenciones_Mes_EESS_${selectedYear}.pdf`,
+      });
+    } else if (activeTab === 'comparativo') {
+      const headers = ['#', 'Establecimiento (EESS)', 'DISA', 'Total Atenciones', 'Pacientes Atendidos', 'Concentración', 'Tarifas SIS (S/)'];
+      const rows = filteredEessList.map((e, idx) => [
+        idx + 1,
+        e,
+        eessDisaMap[e] || '—',
+        (eessTotalsMap[e] || 0).toLocaleString(),
+        (eessAtendidosMap[e] || 0).toLocaleString(),
+        `${eessConcentracionMap[e] || 0} at./pte.`,
+        `S/ ${(eessTarifasMap[e] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ]);
+
+      PdfService.generateEstadisticaPdf({
+        titulo: 'B.1. COMPARATIVO DE ATENCIONES VS PACIENTES ATENDIDOS POR EESS',
+        subtitulo: `Año: ${selectedYear} | Registros: ${filteredEessList.length} EESS`,
+        headers,
+        rows,
+        resumenKpis: [
+          { label: 'Total Atenciones', valor: grandTotal },
+          { label: 'Total Atendidos', valor: grandTotalAtendidos },
+          { label: 'Concentración Global', valor: `${globalConcentracion} at./pte.` },
+          { label: 'EESS Evaluados', valor: filteredEessList.length },
+        ],
+        orientation: 'landscape',
+        filename: `Atenciones_vs_Atendidos_EESS_${selectedYear}.pdf`,
       });
     } else if (activeTab === 'ranking') {
       const headers = ['#', 'Establecimiento (EESS)', 'DISA', 'Total Atenciones', '% Part.', 'Mes Pico', 'Prom. Mensual'];
@@ -459,16 +570,71 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
       {/* Title & Controls Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900 flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <BarChart2 className="w-6 h-6 text-blue-600" />
-            <span>B.1. Atenciones por Mes y Establecimiento de Salud (EESS)</span>
-          </h2>
+            <h2 className="text-xl font-extrabold text-slate-900">
+              B.1. Atenciones Vs Atendidos por Establecimiento en Salud (EESS)
+            </h2>
+            <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 flex items-center space-x-1">
+              <Users className="w-3 h-3 text-emerald-700" />
+              <span>Atenciones Vs Atendidos</span>
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-1">
-            Matriz consolidada, ranking institucional y registro con paginación de alto rendimiento optimizado para más de 1 millón de datos
+            Análisis consolidado de producción prestacional (atenciones), cobertura de personas únicas (atendidos) e índice de concentración por establecimiento
           </p>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <span className="text-[11px] font-semibold text-slate-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
+              Total Atenciones: <strong className="text-blue-700">{grandTotal.toLocaleString()}</strong>
+            </span>
+            <span className="text-[11px] font-semibold text-slate-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+              Pacientes Únicos (Atendidos): <strong className="text-emerald-700">{grandTotalAtendidos.toLocaleString()}</strong>
+            </span>
+            <span className="text-[11px] font-semibold text-slate-700 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg">
+              Concentración Global: <strong className="text-purple-700">{globalConcentracion} atenc./paciente</strong>
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Chart Metric Toggle */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
+            <button
+              onClick={() => setChartMetricMode('atenciones_vs_atendidos')}
+              className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+                chartMetricMode === 'atenciones_vs_atendidos'
+                  ? 'bg-white text-blue-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Comparar Atenciones totales y Pacientes Únicos Atendidos"
+            >
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span>Atenciones vs Atendidos</span>
+            </button>
+            <button
+              onClick={() => setChartMetricMode('solo_atenciones')}
+              className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                chartMetricMode === 'solo_atenciones'
+                  ? 'bg-white text-blue-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Ver únicamente volumen total de atenciones"
+            >
+              Sólo Atenciones
+            </button>
+            <button
+              onClick={() => setChartMetricMode('solo_atendidos')}
+              className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                chartMetricMode === 'solo_atendidos'
+                  ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Ver únicamente número de pacientes únicos atendidos"
+            >
+              Sólo Atendidos
+            </button>
+          </div>
+
           {/* Año selector */}
           <div className="flex items-center space-x-1.5 bg-slate-100 px-3 py-1.5 rounded-xl text-xs font-semibold">
             <Calendar className="w-3.5 h-3.5 text-slate-500" />
@@ -492,7 +658,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
             <select
               value={selectedEess}
               onChange={e => setSelectedEess(e.target.value)}
-              className="bg-transparent font-bold text-slate-800 focus:outline-none max-w-[180px] truncate cursor-pointer"
+              className="bg-transparent font-bold text-slate-800 focus:outline-none max-w-[170px] truncate cursor-pointer"
             >
               <option value="TODOS">Todos ({allEess.length})</option>
               {allEess.map(e => (
@@ -504,7 +670,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
           {/* Export Buttons */}
           <button
             onClick={handleExportExcel}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
             title="Exportar a Excel según la vista activa"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -523,23 +689,29 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
       </div>
 
       {/* KPI Cards Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Total Atenciones</span>
           <div className="text-2xl font-black font-mono text-blue-600 mt-1">{grandTotal.toLocaleString()}</div>
-          <span className="text-[10px] text-slate-400">En período seleccionado</span>
+          <span className="text-[10px] text-slate-400">Prestaciones brindadas</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Pacientes Atendidos</span>
+          <div className="text-2xl font-black font-mono text-emerald-600 mt-1">{grandTotalAtendidos.toLocaleString()}</div>
+          <span className="text-[10px] text-slate-400">Personas únicas atendidas</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Concentración</span>
+          <div className="text-2xl font-black font-mono text-purple-600 mt-1">{globalConcentracion}</div>
+          <span className="text-[10px] text-slate-400">Atenciones por atendido</span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
           <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Establecimientos Activos</span>
-          <div className="text-2xl font-black font-mono text-purple-600 mt-1">{filteredEessList.length}</div>
-          <span className="text-[10px] text-slate-400">Con producción registrada</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Meses Evaluados</span>
-          <div className="text-2xl font-black font-mono text-emerald-600 mt-1">{allMonths.length}</div>
-          <span className="text-[10px] text-slate-400">Columnas cronológicas</span>
+          <div className="text-2xl font-black font-mono text-indigo-600 mt-1">{filteredEessList.length}</div>
+          <span className="text-[10px] text-slate-400">Con atenciones registradas</span>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
@@ -553,79 +725,155 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+            <div className="flex items-center space-x-2">
               <TrendingUp className="w-4 h-4 text-blue-600" />
-              <span>Gráfico Comparativo de Producción por Establecimiento</span>
-            </h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {chartMetricMode === 'atenciones_vs_atendidos'
+                  ? 'Gráfico Comparativo: Atenciones vs Pacientes Atendidos por Establecimiento'
+                  : chartMetricMode === 'solo_atendidos'
+                  ? 'Gráfico de Pacientes Únicos Atendidos por Establecimiento'
+                  : 'Gráfico de Producción Total de Atenciones por Establecimiento'}
+              </h3>
+            </div>
             <p className="text-xs text-slate-400 mt-0.5">
               Demanda acumulada según filtros activos ({chartEessList.length} EESS mostrados)
             </p>
           </div>
 
-          {/* Chart Display Mode Selector */}
-          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold self-start sm:self-auto">
-            <button
-              onClick={() => setChartMode('top10')}
-              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                chartMode === 'top10' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Top 10
-            </button>
-            <button
-              onClick={() => setChartMode('top20')}
-              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                chartMode === 'top20' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Top 20
-            </button>
-            <button
-              onClick={() => setChartMode('pagina')}
-              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                chartMode === 'pagina' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Página Actual
-            </button>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {/* Visual Legend */}
+            {chartMetricMode === 'atenciones_vs_atendidos' && (
+              <div className="flex items-center space-x-3 text-[11px] font-semibold text-slate-600 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200">
+                <span className="flex items-center space-x-1">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-blue-600 inline-block"></span>
+                  <span>Atenciones</span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block"></span>
+                  <span>Atendidos (Únicos)</span>
+                </span>
+                <span className="text-purple-600 font-mono text-[10px]">
+                  Conc. = Atenc. ÷ Atend.
+                </span>
+              </div>
+            )}
+
+            {/* Chart Display Mode Selector */}
+            <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+              <button
+                onClick={() => setChartMode('top10')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  chartMode === 'top10' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Top 10
+              </button>
+              <button
+                onClick={() => setChartMode('top20')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  chartMode === 'top20' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Top 20
+              </button>
+              <button
+                onClick={() => setChartMode('pagina')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  chartMode === 'pagina' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Página Actual
+              </button>
+            </div>
           </div>
         </div>
         
         {chartEessList.length === 0 ? (
           <p className="text-xs text-slate-400 py-6 text-center">No hay registros con los filtros seleccionados.</p>
         ) : (
-          <div className="space-y-3 pt-1">
+          <div className="space-y-4 pt-1">
             {chartEessList.map((eessName, idx) => {
-              const totalEess = eessTotalsMap[eessName] || 0;
-              const pct = grandTotal > 0 ? Math.round((totalEess / grandTotal) * 100) : 0;
-              const barWidth = Math.max(Math.round((totalEess / maxVal) * 100), 4);
-              const barColors = [
-                'bg-blue-600',
-                'bg-emerald-600',
-                'bg-indigo-600',
-                'bg-purple-600',
-                'bg-amber-500',
-                'bg-teal-600',
-                'bg-cyan-600'
-              ];
-              const color = barColors[idx % barColors.length];
+              const atencionesEess = eessTotalsMap[eessName] || 0;
+              const atendidosEess = eessAtendidosMap[eessName] || 0;
+              const concentracion = eessConcentracionMap[eessName] || 0;
+              const pctAtenciones = grandTotal > 0 ? Math.round((atencionesEess / grandTotal) * 100) : 0;
+              const pctAtendidos = grandTotalAtendidos > 0 ? Math.round((atendidosEess / grandTotalAtendidos) * 100) : 0;
+
+              const barWidthAtenciones = Math.max(Math.round((atencionesEess / maxVal) * 100), 4);
+              const barWidthAtendidos = Math.max(Math.round((atendidosEess / maxVal) * 100), 4);
 
               return (
-                <div key={eessName} className="space-y-1">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-slate-800 truncate pr-4" title={eessName}>
+                <div key={eessName} className="p-2.5 rounded-xl hover:bg-slate-50/80 transition-colors border border-transparent hover:border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs mb-1.5">
+                    <span className="font-bold text-slate-800 truncate pr-4" title={eessName}>
                       {idx + 1}. {eessName}
+                      <span className="ml-2 text-[10px] font-normal text-slate-400">
+                        ({eessDisaMap[eessName] || 'MINSA'})
+                      </span>
                     </span>
-                    <span className="font-mono font-bold text-slate-700 whitespace-nowrap">
-                      {totalEess.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">({pct}%)</span>
-                    </span>
+
+                    {chartMetricMode === 'atenciones_vs_atendidos' ? (
+                      <div className="flex items-center space-x-3 text-xs font-mono">
+                        <span className="text-blue-700 font-bold whitespace-nowrap">
+                          {atencionesEess.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">atenc. ({pctAtenciones}%)</span>
+                        </span>
+                        <span className="text-emerald-700 font-bold whitespace-nowrap">
+                          {atendidosEess.toLocaleString()} <span className="text-[10px] text-slate-400 font-normal">atend. ({pctAtendidos}%)</span>
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          concentracion >= 2.0
+                            ? 'bg-purple-100 text-purple-800 border-purple-200'
+                            : concentracion >= 1.5
+                            ? 'bg-blue-100 text-blue-800 border-blue-200'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}>
+                          {concentracion} at./pte.
+                        </span>
+                      </div>
+                    ) : chartMetricMode === 'solo_atendidos' ? (
+                      <span className="font-mono font-bold text-emerald-700 whitespace-nowrap">
+                        {atendidosEess.toLocaleString()} pacientes <span className="text-[10px] text-slate-400 font-normal">({pctAtendidos}%)</span>
+                      </span>
+                    ) : (
+                      <span className="font-mono font-bold text-blue-700 whitespace-nowrap">
+                        {atencionesEess.toLocaleString()} atenciones <span className="text-[10px] text-slate-400 font-normal">({pctAtenciones}%)</span>
+                      </span>
+                    )}
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-500 ${color}`}
-                      style={{ width: `${barWidth}%` }}
-                    ></div>
-                  </div>
+
+                  {/* Dual comparison bars or single bar */}
+                  {chartMetricMode === 'atenciones_vs_atendidos' ? (
+                    <div className="space-y-1">
+                      {/* Atenciones bar */}
+                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden" title={`Atenciones: ${atencionesEess}`}>
+                        <div 
+                          className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                          style={{ width: `${barWidthAtenciones}%` }}
+                        ></div>
+                      </div>
+                      {/* Atendidos bar */}
+                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden" title={`Atendidos (Pacientes únicos): ${atendidosEess}`}>
+                        <div 
+                          className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                          style={{ width: `${barWidthAtendidos}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ) : chartMetricMode === 'solo_atendidos' ? (
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                        style={{ width: `${barWidthAtendidos}%` }}
+                      ></div>
+                    </div>
+                  ) : (
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                        style={{ width: `${barWidthAtenciones}%` }}
+                      ></div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -636,6 +884,21 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
       {/* Tabs Navigation Strip */}
       <div className="flex border-b border-slate-200 bg-white px-4 pt-3 rounded-t-2xl space-x-2 sm:space-x-4 overflow-x-auto">
         <button
+          onClick={() => setActiveTab('comparativo')}
+          className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center space-x-2 transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'comparativo'
+              ? 'border-emerald-600 text-emerald-700 font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4 text-emerald-600" />
+          <span>1. Atenciones vs Atendidos</span>
+          <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+            Comparativo EESS
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('matriz')}
           className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center space-x-2 transition-colors cursor-pointer whitespace-nowrap ${
             activeTab === 'matriz'
@@ -644,7 +907,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>1. Matriz Cruzada (EESS vs Mes)</span>
+          <span>2. Matriz Cruzada (EESS vs Mes)</span>
           <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700">
             {filteredEessList.length}
           </span>
@@ -659,7 +922,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
           }`}
         >
           <Award className="w-4 h-4" />
-          <span>2. Ranking de Establecimientos</span>
+          <span>3. Ranking de Establecimientos</span>
           <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700">
             {filteredEessList.length}
           </span>
@@ -674,7 +937,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
           }`}
         >
           <Calendar className="w-4 h-4" />
-          <span>3. Producción Mensual Cronológica</span>
+          <span>4. Producción Mensual Cronológica</span>
           <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-50 text-emerald-700">
             {allMonths.length}
           </span>
@@ -689,7 +952,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
           }`}
         >
           <List className="w-4 h-4" />
-          <span>4. Registro Detallado de Atenciones</span>
+          <span>5. Registro Detallado de Atenciones</span>
           <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-purple-50 text-purple-700">
             {filteredAtencionesList.length}
           </span>
@@ -866,7 +1129,235 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
         </div>
       )}
 
-      {/* TAB 2: Ranking de Establecimientos con Paginación */}
+      {/* TAB 2: Atenciones vs Atendidos por EESS con Paginación */}
+      {activeTab === 'comparativo' && (
+        <div className="bg-white rounded-b-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Header Toolbar */}
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
+                <Users className="w-4 h-4 text-emerald-600" />
+                <span>Comparativo de Atenciones vs Pacientes Atendidos por EESS</span>
+              </span>
+
+              {/* Search */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filtrar por nombre de EESS..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 w-52 sm:w-64"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Sorting selector */}
+              <div className="flex items-center space-x-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 text-xs text-slate-700">
+                <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                <span>Ordenar:</span>
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value as any)}
+                  className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  <option value="total_desc">Atenciones (Mayor a Menor)</option>
+                  <option value="total_asc">Atenciones (Menor a Mayor)</option>
+                  <option value="atendidos_desc">Atendidos (Mayor a Menor)</option>
+                  <option value="atendidos_asc">Atendidos (Menor a Mayor)</option>
+                  <option value="concentracion_desc">Concentración (Mayor a Menor)</option>
+                  <option value="nombre_asc">Nombre EESS (A - Z)</option>
+                  <option value="nombre_desc">Nombre EESS (Z - A)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3 text-xs text-slate-500 font-mono">
+              <span>
+                Mostrando <strong className="text-slate-900 font-bold">{paginatedComparativoList.length}</strong> de <strong className="text-slate-900 font-bold">{filteredEessList.length}</strong> EESS
+              </span>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white font-bold">
+                  <th className="py-3 px-4 text-center w-12">#</th>
+                  <th className="py-3 px-4 min-w-[220px]">Establecimiento de Salud (EESS)</th>
+                  <th className="py-3 px-4 min-w-[130px]">DISA / Región</th>
+                  <th className="py-3 px-4 text-right min-w-[120px] bg-blue-950 text-blue-200">
+                    Total Atenciones
+                  </th>
+                  <th className="py-3 px-4 text-right min-w-[130px] bg-emerald-950 text-emerald-200">
+                    Pacientes Atendidos
+                  </th>
+                  <th className="py-3 px-4 text-center min-w-[125px]">
+                    Re-atenciones (Recurrencia)
+                  </th>
+                  <th className="py-3 px-4 text-center min-w-[130px]">
+                    Concentración (Atenc./Atend.)
+                  </th>
+                  <th className="py-3 px-4 min-w-[150px]">
+                    Relación Proporcional
+                  </th>
+                  <th className="py-3 px-4 text-right min-w-[110px]">
+                    Tarifa SIS Total
+                  </th>
+                  <th className="py-3 px-4 text-right min-w-[115px]">
+                    Prom./Paciente
+                  </th>
+                  <th className="py-3 px-4 text-center w-24">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paginatedComparativoList.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-8 text-center text-slate-400">
+                      No se encontraron establecimientos con los criterios seleccionados.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedComparativoList.map((eessName, idx) => {
+                    const rowNumber = (pageComparativo - 1) * pageSizeComparativo + idx + 1;
+                    const atencionesCount = eessTotalsMap[eessName] || 0;
+                    const atendidosCount = eessAtendidosMap[eessName] || 0;
+                    const recurrencia = Math.max(atencionesCount - atendidosCount, 0);
+                    const concentracion = eessConcentracionMap[eessName] || 0;
+                    const pctAtenciones = grandTotal > 0 ? ((atencionesCount / grandTotal) * 100).toFixed(1) : '0';
+                    const pctAtendidos = grandTotalAtendidos > 0 ? ((atendidosCount / grandTotalAtendidos) * 100).toFixed(1) : '0';
+                    const tarifa = eessTarifasMap[eessName] || 0;
+                    const promTarifa = atendidosCount > 0 ? (tarifa / atendidosCount).toFixed(2) : '0.00';
+
+                    const widthAtenciones = Math.max(Math.round((atencionesCount / maxVal) * 100), 4);
+                    const widthAtendidos = Math.max(Math.round((atendidosCount / maxVal) * 100), 4);
+
+                    return (
+                      <tr key={eessName} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 text-center font-mono text-slate-400 font-bold">
+                          #{rowNumber}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-slate-800">
+                          <span className="truncate block max-w-[260px]" title={eessName}>
+                            {eessName}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                          {eessDisaMap[eessName] || '—'}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-blue-700 bg-blue-50/30 whitespace-nowrap">
+                          <span>{atencionesCount.toLocaleString()}</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">({pctAtenciones}%)</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30 whitespace-nowrap">
+                          <span>{atendidosCount.toLocaleString()}</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">({pctAtendidos}%)</span>
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono text-slate-600 whitespace-nowrap">
+                          {recurrencia > 0 ? (
+                            <span className="text-amber-700 font-bold">+{recurrencia.toLocaleString()}</span>
+                          ) : (
+                            <span className="text-slate-400">0</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${
+                            concentracion >= 2.0
+                              ? 'bg-purple-100 text-purple-800 border-purple-200'
+                              : concentracion >= 1.5
+                              ? 'bg-blue-100 text-blue-800 border-blue-200'
+                              : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          }`}>
+                            {concentracion} at./pte.
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="space-y-1 w-full min-w-[130px]">
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden" title={`Atenciones: ${atencionesCount}`}>
+                              <div className="h-full rounded-full bg-blue-600" style={{ width: `${widthAtenciones}%` }}></div>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden" title={`Atendidos: ${atendidosCount}`}>
+                              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${widthAtendidos}%` }}></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-700 whitespace-nowrap">
+                          S/ {tarifa.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-slate-800 whitespace-nowrap">
+                          S/ {promTarifa}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            onClick={() => {
+                              setSelectedEess(eessName);
+                              setActiveTab('detalle');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-semibold text-[11px] transition-colors cursor-pointer flex items-center justify-center space-x-1 mx-auto"
+                            title={`Ver atenciones individuales de ${eessName}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Detalle</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              <tfoot className="bg-slate-900 text-white font-bold border-t-2 border-slate-700">
+                <tr>
+                  <td colSpan={3} className="py-3 px-4">
+                    TOTAL GENERAL ({filteredEessList.length} EESS)
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-blue-300">
+                    {grandTotal.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-emerald-300">
+                    {grandTotalAtendidos.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-4 text-center font-mono text-amber-300">
+                    +{(grandTotal - grandTotalAtendidos).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-4 text-center font-mono text-purple-300">
+                    {globalConcentracion} at./pte.
+                  </td>
+                  <td className="py-3 px-4"></td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-300">
+                    S/ {grandTotalTarifas.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-emerald-400">
+                    S/ {grandTotalAtendidos > 0 ? (grandTotalTarifas / grandTotalAtendidos).toFixed(2) : '0.00'}
+                  </td>
+                  <td className="py-3 px-4"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <TablePagination
+            currentPage={pageComparativo}
+            totalItems={filteredEessList.length}
+            pageSize={pageSizeComparativo}
+            onPageChange={setPageComparativo}
+            onPageSizeChange={setPageSizeComparativo}
+            pageSizeOptions={[10, 15, 25, 50, 100]}
+            labelSingular="establecimiento de salud"
+            labelPlural="establecimientos de salud"
+          />
+        </div>
+      )}
+
+      {/* TAB 3: Ranking de Establecimientos con Paginación */}
       {activeTab === 'ranking' && (
         <div className="bg-white rounded-b-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -888,7 +1379,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
                 {searchTerm && (
                   <button
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -906,20 +1397,22 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
               <thead>
                 <tr className="bg-slate-900 text-white font-bold">
                   <th className="py-3 px-4 text-center w-14">#</th>
-                  <th className="py-3 px-4 min-w-[240px]">Establecimiento de Salud (EESS)</th>
-                  <th className="py-3 px-4 min-w-[140px]">DISA / Región</th>
-                  <th className="py-3 px-4 text-center min-w-[120px]">Total Atenciones</th>
-                  <th className="py-3 px-4 text-center min-w-[100px]">% Total</th>
+                  <th className="py-3 px-4 min-w-[220px]">Establecimiento de Salud (EESS)</th>
+                  <th className="py-3 px-4 min-w-[130px]">DISA / Región</th>
+                  <th className="py-3 px-4 text-center min-w-[110px] bg-blue-950 text-blue-200">Total Atenciones</th>
+                  <th className="py-3 px-4 text-center min-w-[120px] bg-emerald-950 text-emerald-200">Pacientes Atendidos</th>
+                  <th className="py-3 px-4 text-center min-w-[110px]">Concentración</th>
+                  <th className="py-3 px-4 text-center min-w-[90px]">% Total</th>
                   <th className="py-3 px-4 text-center min-w-[120px]">Mes con Mayor Producción</th>
-                  <th className="py-3 px-4 text-center min-w-[110px]">Promedio Mensual</th>
-                  <th className="py-3 px-4 min-w-[140px]">Nivel Demanda</th>
+                  <th className="py-3 px-4 text-center min-w-[100px]">Promedio Mensual</th>
+                  <th className="py-3 px-4 min-w-[120px]">Nivel Demanda</th>
                   <th className="py-3 px-4 text-center w-28">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {paginatedRankingList.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                    <td colSpan={11} className="py-8 text-center text-slate-400">
                       No se encontraron establecimientos con los criterios seleccionados.
                     </td>
                   </tr>
@@ -927,6 +1420,8 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
                   paginatedRankingList.map((eessName, idx) => {
                     const rowNumber = (pageRanking - 1) * pageSizeRanking + idx + 1;
                     const total = eessTotalsMap[eessName] || 0;
+                    const atendidos = eessAtendidosMap[eessName] || 0;
+                    const concentracion = eessConcentracionMap[eessName] || 0;
                     const pct = grandTotal > 0 ? ((total / grandTotal) * 100).toFixed(2) : '0';
                     const avg = allMonths.length > 0 ? Math.round(total / allMonths.length) : total;
                     const barWidth = Math.max(Math.round((total / maxVal) * 100), 3);
@@ -944,7 +1439,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
                           )}
                         </td>
                         <td className="py-3 px-4 font-bold text-slate-800">
-                          <span className="truncate block max-w-[280px]" title={eessName}>
+                          <span className="truncate block max-w-[260px]" title={eessName}>
                             {eessName}
                           </span>
                         </td>
@@ -953,6 +1448,12 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
                         </td>
                         <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 text-sm">
                           {total.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono font-bold text-emerald-600 text-sm">
+                          {atendidos.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono text-purple-700 font-bold">
+                          {concentracion} at./pte.
                         </td>
                         <td className="py-3 px-4 text-center font-mono font-semibold text-slate-600">
                           {pct}%

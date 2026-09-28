@@ -53,6 +53,57 @@ export interface User {
   punto_asignado?: string;
 }
 
+export interface DigitadorRecord {
+  id: string;
+  dni: string;
+  nombre_completo: string;
+  cod_punto_digitacion: string;
+  punto_digitacion: string;
+  codigo_eess?: string;
+  nombre_eess?: string;
+  cargo?: string;
+  estado: 'ACTIVO' | 'INACTIVO';
+  correo?: string;
+  telefono?: string;
+  fecha_creacion?: string;
+  fecha_actualizacion?: string;
+}
+
+export interface DigitadorEstadisticaMensual {
+  mes: string; // YYYY-MM basado en fecha_atencion
+  labelMes: string; // ej. "Mayo 2026"
+  year: number;
+  month: number;
+  totalAtenciones: number;
+  pacientesUnicos: number;
+  diasPromedioOportunidad: number;
+  totalTarifa: number;
+  eessCount: number;
+}
+
+export interface DigitadorEstadisticaCompleta {
+  id: string;
+  dni: string;
+  nombre_completo: string;
+  cod_punto_digitacion: string;
+  punto_digitacion: string;
+  codigo_eess?: string;
+  nombre_eess?: string;
+  cargo?: string;
+  estado: 'ACTIVO' | 'INACTIVO';
+  correo?: string;
+  telefono?: string;
+  totalAtenciones: number;
+  pacientesUnicos: number;
+  diasPromedioOportunidad: number;
+  totalTarifa: number;
+  eessCount: number;
+  serviciosCount: number;
+  mensualizado: DigitadorEstadisticaMensual[];
+  topEess: { nombre: string; atenciones: number; pacientes: number }[];
+  topServicios: { desc: string; atenciones: number }[];
+}
+
 export interface AuditLog {
   id: string;
   fecha: string;
@@ -81,6 +132,7 @@ export type ActiveModule =
   | 'dashboard'
   | 'stats-mes-eess'
   | 'stats-punto-dig'
+  | 'stats-digitadores'
   | 'stats-profesional'
   | 'stats-servicio'
   | 'stats-sexo-edad'
@@ -94,6 +146,7 @@ export type ActiveModule =
   | 'report-cobertura'
   | 'est-mes-eess'
   | 'est-punto'
+  | 'est-digitadores'
   | 'est-profesional'
   | 'est-servicio'
   | 'est-sexo-edad'
@@ -102,9 +155,6 @@ export type ActiveModule =
   | 'est-disa'
   | 'est-oportunidad'
   | 'est-registro-atencion'
-  | 'rep-general'
-  | 'rep-productividad'
-  | 'rep-cobertura'
   | 'mapa'
   | 'graficos'
   | 'carga-datos'
