@@ -17,7 +17,10 @@ import {
   User,
   CheckCircle2,
   BarChart3,
+  ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   X,
   FileText,
 } from 'lucide-react';
@@ -27,6 +30,137 @@ import { PdfService } from '../../services/pdfService';
 interface Props {
   atenciones: Atencion[];
 }
+
+interface TablePaginationProps {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  itemName?: string;
+}
+
+const TablePagination: React.FC<TablePaginationProps> = ({
+  currentPage,
+  totalPages,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  itemName = 'registros',
+}) => {
+  if (totalItems === 0) return null;
+
+  const startItem = (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (currentPage > 3) pages.push('...');
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (currentPage < totalPages - 2) pages.push('...');
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  return (
+    <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+      <div className="flex flex-wrap items-center gap-3 text-slate-500">
+        <span>
+          Mostrando <strong className="text-slate-800 font-mono">{startItem}</strong> -{' '}
+          <strong className="text-slate-800 font-mono">{endItem}</strong> de{' '}
+          <strong className="text-slate-800 font-mono">{totalItems}</strong> {itemName}
+        </span>
+        <div className="flex items-center space-x-1.5 pl-3 border-l border-slate-200">
+          <span className="text-[11px] text-slate-400">Por pág:</span>
+          <select
+            value={pageSize}
+            onChange={e => {
+              onPageSizeChange(Number(e.target.value));
+              onPageChange(1);
+            }}
+            className="bg-white border border-slate-200 text-slate-700 font-bold rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          >
+            <option value={15}>15</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex items-center space-x-1">
+        <button
+          onClick={() => onPageChange(1)}
+          disabled={currentPage === 1}
+          className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+          title="Primera página"
+        >
+          <ChevronsLeft className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+          className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+          title="Página anterior"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </button>
+
+        <div className="flex items-center space-x-1 px-1">
+          {getPageNumbers().map((p, idx) => {
+            if (p === '...') {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-slate-400 font-bold select-none">
+                  …
+                </span>
+              );
+            }
+            const isCurrent = p === currentPage;
+            return (
+              <button
+                key={`page-${p}`}
+                onClick={() => onPageChange(Number(p))}
+                className={`min-w-[28px] h-7 px-2 font-mono font-bold rounded-lg text-xs transition-colors ${
+                  isCurrent
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-700'
+                }`}
+              >
+                {p}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+          className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+          title="Página siguiente"
+        >
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => onPageChange(totalPages)}
+          disabled={currentPage === totalPages}
+          className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 transition-colors"
+          title="Última página"
+        >
+          <ChevronsRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // Helper to extract year and month from fecha_atencion
 export const extractMesAtencion = (
@@ -58,8 +192,18 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
   const [selectedProfDni, setSelectedProfDni] = useState<string | null>(null);
 
   // Pagination for tables
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const itemsPerPage = 15;
+  const [pageSize, setPageSize] = useState<number>(15);
+  const [pageRanking, setPageRanking] = useState<number>(1);
+  const [pageMeses, setPageMeses] = useState<number>(1);
+  const [pageEess, setPageEess] = useState<number>(1);
+  const [pageFicha, setPageFicha] = useState<number>(1);
+
+  const resetAllPages = () => {
+    setPageRanking(1);
+    setPageMeses(1);
+    setPageEess(1);
+    setPageFicha(1);
+  };
 
   // Extract distinct professional types
   const allTipos = useMemo(() => {
@@ -333,6 +477,35 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
   const totalAtencionesFiltradas = useMemo(() => {
     return filteredProfList.reduce((acc, p) => acc + p.totalAtenciones, 0);
   }, [filteredProfList]);
+
+  // Paginated slices for each tab to guarantee instant performance even with 1M+ records
+  const totalRankingPages = Math.max(1, Math.ceil(filteredProfList.length / pageSize));
+  const currentRankingPage = Math.min(pageRanking, totalRankingPages);
+  const paginatedProfList = useMemo(() => {
+    const start = (currentRankingPage - 1) * pageSize;
+    return filteredProfList.slice(start, start + pageSize);
+  }, [filteredProfList, currentRankingPage, pageSize]);
+
+  const totalMesesPages = Math.max(1, Math.ceil(filteredProfList.length / pageSize));
+  const currentMesesPage = Math.min(pageMeses, totalMesesPages);
+  const paginatedMesesList = useMemo(() => {
+    const start = (currentMesesPage - 1) * pageSize;
+    return filteredProfList.slice(start, start + pageSize);
+  }, [filteredProfList, currentMesesPage, pageSize]);
+
+  const totalEessPages = Math.max(1, Math.ceil(profEessPairs.length / pageSize));
+  const currentEessPage = Math.min(pageEess, totalEessPages);
+  const paginatedProfEessPairs = useMemo(() => {
+    const start = (currentEessPage - 1) * pageSize;
+    return profEessPairs.slice(start, start + pageSize);
+  }, [profEessPairs, currentEessPage, pageSize]);
+
+  const totalFichaPages = Math.max(1, Math.ceil(currentProfAtenciones.length / pageSize));
+  const currentFichaPage = Math.min(pageFicha, totalFichaPages);
+  const paginatedFichaAtenciones = useMemo(() => {
+    const start = (currentFichaPage - 1) * pageSize;
+    return currentProfAtenciones.slice(start, start + pageSize);
+  }, [currentProfAtenciones, currentFichaPage, pageSize]);
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -684,13 +857,16 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
               value={searchTerm}
               onChange={e => {
                 setSearchTerm(e.target.value);
-                setCurrentPage(1);
+                resetAllPages();
               }}
               className="w-full pl-10 pr-8 py-2 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-medium text-slate-800 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-400"
             />
             {searchTerm && (
               <button
-                onClick={() => setSearchTerm('')}
+                onClick={() => {
+                  setSearchTerm('');
+                  resetAllPages();
+                }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-4 h-4" />
@@ -705,7 +881,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
               value={selectedTipo}
               onChange={e => {
                 setSelectedTipo(e.target.value);
-                setCurrentPage(1);
+                resetAllPages();
               }}
               className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-bold text-slate-800 rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             >
@@ -725,7 +901,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
               value={selectedEessFilter}
               onChange={e => {
                 setSelectedEessFilter(e.target.value);
-                setCurrentPage(1);
+                resetAllPages();
               }}
               className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-bold text-slate-800 rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             >
@@ -745,7 +921,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
               value={selectedMesFilter}
               onChange={e => {
                 setSelectedMesFilter(e.target.value);
-                setCurrentPage(1);
+                resetAllPages();
               }}
               className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-bold text-slate-800 rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             >
@@ -916,9 +1092,14 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                 <UserCheck className="w-4 h-4 text-emerald-600" />
                 <span>Directorio Asistencial por Fecha de Atención</span>
               </span>
-              <span className="text-xs text-slate-500">
-                Mostrando <strong className="text-slate-900">{filteredProfList.length}</strong> profesionales
-              </span>
+              <div className="flex items-center space-x-2 text-xs text-slate-500">
+                <span className="bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-mono">
+                  Pág. <strong className="text-emerald-700">{currentRankingPage}</strong> / {totalRankingPages}
+                </span>
+                <span>
+                  Total: <strong className="text-slate-900">{filteredProfList.length}</strong> profesionales
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -945,7 +1126,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                       </td>
                     </tr>
                   ) : (
-                    filteredProfList.map(p => {
+                    paginatedProfList.map(p => {
                       const dias = p.fechasAtencion.size || 1;
                       const prom = (p.totalAtenciones / dias).toFixed(1);
                       const eessEntries = Object.values(p.eessMap);
@@ -1028,6 +1209,16 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                 </tbody>
               </table>
             </div>
+
+            <TablePagination
+              currentPage={currentRankingPage}
+              totalPages={totalRankingPages}
+              totalItems={filteredProfList.length}
+              pageSize={pageSize}
+              onPageChange={setPageRanking}
+              onPageSizeChange={setPageSize}
+              itemName="profesionales"
+            />
           </div>
         </div>
       )}
@@ -1058,14 +1249,19 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
                 <BarChart3 className="w-4 h-4 text-blue-600" />
                 <span>Desglose Mes a Mes por Profesional</span>
               </span>
-              <span className="text-xs text-slate-400 italic">
-                Celdas con sombreado según volumen de producción
-              </span>
+              <div className="flex items-center space-x-2 text-xs text-slate-500">
+                <span className="bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-mono">
+                  Pág. <strong className="text-blue-700">{currentMesesPage}</strong> / {totalMesesPages}
+                </span>
+                <span>
+                  Total: <strong className="text-slate-900">{filteredProfList.length}</strong> profesionales
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -1085,7 +1281,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredProfList.map(p => {
+                  {paginatedMesesList.map(p => {
                     const mesesActivos = Object.keys(p.mesesMap).length;
 
                     return (
@@ -1151,6 +1347,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                               onClick={() => {
                                 setSelectedProfDni(p.dni);
                                 setActiveTab('ficha');
+                                setPageFicha(1);
                               }}
                               className="text-[10px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
                             >
@@ -1174,6 +1371,16 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                 </tbody>
               </table>
             </div>
+
+            <TablePagination
+              currentPage={currentMesesPage}
+              totalPages={totalMesesPages}
+              totalItems={filteredProfList.length}
+              pageSize={pageSize}
+              onPageChange={setPageMeses}
+              onPageSizeChange={setPageSize}
+              itemName="profesionales"
+            />
           </div>
         </div>
       )}
@@ -1201,14 +1408,19 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
                 <Building2 className="w-4 h-4 text-purple-600" />
                 <span>Detalle de Producción por Profesional y Centro de Salud</span>
               </span>
-              <span className="text-xs text-slate-500">
-                Mostrando {profEessPairs.length} asignaciones
-              </span>
+              <div className="flex items-center space-x-2 text-xs text-slate-500">
+                <span className="bg-white px-2.5 py-1 rounded-lg border border-slate-200 font-mono">
+                  Pág. <strong className="text-purple-700">{currentEessPage}</strong> / {totalEessPages}
+                </span>
+                <span>
+                  Total: <strong className="text-slate-900">{profEessPairs.length}</strong> asignaciones
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -1228,7 +1440,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {profEessPairs.map((item, idx) => (
+                  {paginatedProfEessPairs.map((item, idx) => (
                     <tr key={`${item.profDni}-${item.eessNombre}-${idx}`} className="hover:bg-slate-50 transition-colors">
                       <td className="py-3 px-4 font-bold text-slate-900">
                         <div>{item.profNombre}</div>
@@ -1276,6 +1488,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                             onClick={() => {
                               setSelectedProfDni(item.profDni);
                               setActiveTab('ficha');
+                              setPageFicha(1);
                             }}
                             className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white transition-colors cursor-pointer"
                             title="Ver ficha individual"
@@ -1300,6 +1513,16 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                 </tbody>
               </table>
             </div>
+
+            <TablePagination
+              currentPage={currentEessPage}
+              totalPages={totalEessPages}
+              totalItems={profEessPairs.length}
+              pageSize={pageSize}
+              onPageChange={setPageEess}
+              onPageSizeChange={setPageSize}
+              itemName="asignaciones"
+            />
           </div>
         </div>
       )}
@@ -1352,7 +1575,10 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                   <span className="text-xs text-slate-400">Cambiar profesional:</span>
                   <select
                     value={currentProf.dni}
-                    onChange={e => setSelectedProfDni(e.target.value)}
+                    onChange={e => {
+                      setSelectedProfDni(e.target.value);
+                      setPageFicha(1);
+                    }}
                     className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:border-emerald-500 max-w-xs"
                   >
                     {profAggregated.map(p => (
@@ -1547,7 +1773,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                   <span>Atenciones Verificadas por Fecha de Atención ({currentProfAtenciones.length})</span>
                 </span>
                 <span className="text-[11px] text-slate-500 block mt-0.5">
-                  Listado cronológico individual para auditoría de FUAs
+                  Listado cronológico individual para auditoría de FUAs • Pág. <strong className="text-emerald-700 font-mono">{currentFichaPage}</strong> de {totalFichaPages}
                 </span>
               </div>
               <button
@@ -1574,7 +1800,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {currentProfAtenciones.map(a => (
+                  {paginatedFichaAtenciones.map(a => (
                     <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                       <td className="py-2.5 px-3 font-mono font-bold text-slate-800">
                         {a.fecha_atencion}
@@ -1602,6 +1828,16 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                 </tbody>
               </table>
             </div>
+
+            <TablePagination
+              currentPage={currentFichaPage}
+              totalPages={totalFichaPages}
+              totalItems={currentProfAtenciones.length}
+              pageSize={pageSize}
+              onPageChange={setPageFicha}
+              onPageSizeChange={setPageSize}
+              itemName="atenciones"
+            />
           </div>
         </div>
       )}

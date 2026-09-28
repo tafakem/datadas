@@ -143,7 +143,7 @@ export const ChartsGallery: React.FC<Props> = ({ atenciones }) => {
                 const val = dateMap[k];
                 const height = Math.max(Math.round((val / maxTrendVal) * 100), 8);
                 return (
-                  <div key={k} className="flex-1 flex flex-col items-center group relative">
+                  <div key={k} className="flex-1 h-full flex flex-col justify-end items-center group relative">
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-8 bg-slate-900 text-white text-[10px] rounded px-2 py-1 pointer-events-none whitespace-nowrap z-20 font-mono">
                       {k}: {metricType === 'tarifas' ? `S/ ${val.toFixed(2)}` : val}
                     </div>

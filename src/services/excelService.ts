@@ -177,40 +177,53 @@ export class ExcelService {
   }
 
   /**
-   * Export atenciones to a styled .xlsx file
+   * Export atenciones or arbitrary tabular data to a styled .xlsx file
    */
-  static exportToExcel(atenciones: Atencion[], filename = 'Reporte_Atenciones_Salud.xlsx'): void {
-    const rows = atenciones.map(a => ({
-      'ID': a.id,
-      'N° Formato': a.nro_formato,
-      'Fecha Atención': a.fecha_atencion,
-      'Hora': a.hora_atencion,
-      'Tipo Doc': a.tipo_doc,
-      'N° Documento': a.doc_identidad,
-      'Paciente / Beneficiario': a.beneficiario,
-      'Edad': a.edad,
-      'Sexo': a.sexo,
-      'Código EESS': a.codigo_eess,
-      'Establecimiento de Salud (EESS)': a.nombre_eess,
-      'Cód. Servicio': a.cod_servicio,
-      'Descripción Servicio': a.descripcion_servicio,
-      'DNI Profesional': a.dni_profesional,
-      'Nombre Profesional': a.nombre_profesional,
-      'Tipo Profesional': a.tipo_profesional,
-      'Colegiatura': a.colegiatura,
-      'RNE': a.rne,
-      'Tarifa (S/)': a.tarifa,
-      'Historia Clínica': a.historia_clinica,
-      'Componente': a.componente,
-      'Condición Materna': a.condicion_materna,
-      'Tipo Atención': a.tipo_atencion,
-      'Lugar Atención': a.lugar_atencion,
-      'Período Cierre': a.periodo_cierre,
-      'DISA / Región': a.disa,
-      'Punto Digitación': a.punto_digitacion,
-      'Digitador': a.digitador,
-      'Fecha Registro': a.fecha_registro,
-    }));
+  static exportToExcel(
+    data: Atencion[] | Record<string, any>[],
+    filename = 'Reporte_Atenciones_Salud.xlsx'
+  ): void {
+    if (!data || data.length === 0) return;
+
+    let rows: Record<string, any>[];
+    const isAtencionArray = 'nro_formato' in data[0] && 'id' in data[0];
+
+    if (isAtencionArray) {
+      const atenciones = data as Atencion[];
+      rows = atenciones.map(a => ({
+        'ID': a.id,
+        'N° Formato': a.nro_formato,
+        'Fecha Atención': a.fecha_atencion,
+        'Hora': a.hora_atencion,
+        'Tipo Doc': a.tipo_doc,
+        'N° Documento': a.doc_identidad,
+        'Paciente / Beneficiario': a.beneficiario,
+        'Edad': a.edad,
+        'Sexo': a.sexo,
+        'Código EESS': a.codigo_eess,
+        'Establecimiento de Salud (EESS)': a.nombre_eess,
+        'Cód. Servicio': a.cod_servicio,
+        'Descripción Servicio': a.descripcion_servicio,
+        'DNI Profesional': a.dni_profesional,
+        'Nombre Profesional': a.nombre_profesional,
+        'Tipo Profesional': a.tipo_profesional,
+        'Colegiatura': a.colegiatura,
+        'RNE': a.rne,
+        'Tarifa (S/)': a.tarifa,
+        'Historia Clínica': a.historia_clinica,
+        'Componente': a.componente,
+        'Condición Materna': a.condicion_materna,
+        'Tipo Atención': a.tipo_atencion,
+        'Lugar Atención': a.lugar_atencion,
+        'Período Cierre': a.periodo_cierre,
+        'DISA / Región': a.disa,
+        'Punto Digitación': a.punto_digitacion,
+        'Digitador': a.digitador,
+        'Fecha Registro': a.fecha_registro,
+      }));
+    } else {
+      rows = data as Record<string, any>[];
+    }
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
 
@@ -222,17 +235,14 @@ export class ExcelService {
 
     // Create summary sheet
     const summaryData = [
-      { 'Métrica': 'Total de Atenciones Exportadas', 'Valor': atenciones.length },
+      { 'Métrica': 'Total de Registros Exportados', 'Valor': data.length },
       { 'Métrica': 'Fecha de Generación', 'Valor': new Date().toLocaleString() },
-      { 'Métrica': 'Establecimientos Distintos', 'Valor': new Set(atenciones.map(a => a.nombre_eess)).size },
-      { 'Métrica': 'Profesionales Distintos', 'Valor': new Set(atenciones.map(a => a.dni_profesional)).size },
-      { 'Métrica': 'Monto Total Facturado (S/)', 'Valor': atenciones.reduce((acc, a) => acc + Number(a.tarifa || 0), 0).toFixed(2) },
     ];
     const summarySheet = XLSX.utils.json_to_sheet(summaryData);
     summarySheet['!cols'] = [{ wch: 32 }, { wch: 25 }];
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Atenciones');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Datos');
     XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumen');
 
     XLSX.writeFile(workbook, filename);
