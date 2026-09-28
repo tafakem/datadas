@@ -19,8 +19,10 @@ import {
   BarChart3,
   ChevronRight,
   X,
+  FileText,
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -92,14 +94,25 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
     colegiatura: string;
     rne: string;
     totalAtenciones: number;
+    montoTotalFacturado: number;
     fechasAtencion: Set<string>;
     servicios: Set<string>;
+    serviciosMap: Record<
+      string,
+      {
+        nombre: string;
+        codigo: string;
+        count: number;
+        tarifaTotal: number;
+      }
+    >;
     eessMap: Record<
       string,
       {
         nombre: string;
         codigo: string;
         count: number;
+        mesesCounts: Record<string, number>;
         fechas: Set<string>;
         servicios: Set<string>;
         minFecha: string;
@@ -136,8 +149,10 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
           colegiatura: a.colegiatura || '',
           rne: a.rne || '',
           totalAtenciones: 0,
+          montoTotalFacturado: 0,
           fechasAtencion: new Set(),
           servicios: new Set(),
+          serviciosMap: {},
           eessMap: {},
           mesesMap: {},
           minFecha: a.fecha_atencion || '',
@@ -147,6 +162,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
 
       const p = map[key];
       p.totalAtenciones++;
+      p.montoTotalFacturado += Number(a.tarifa) || 0;
 
       if (a.fecha_atencion) {
         p.fechasAtencion.add(a.fecha_atencion);
@@ -156,33 +172,17 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
 
       if (a.descripcion_servicio) {
         p.servicios.add(a.descripcion_servicio);
-      }
-
-      // Breakdown by EESS
-      const eessName = a.nombre_eess || 'EESS SIN NOMBRE';
-      if (!p.eessMap[eessName]) {
-        p.eessMap[eessName] = {
-          nombre: eessName,
-          codigo: a.codigo_eess || '',
-          count: 0,
-          fechas: new Set(),
-          servicios: new Set(),
-          minFecha: a.fecha_atencion || '',
-          maxFecha: a.fecha_atencion || '',
-        };
-      }
-      p.eessMap[eessName].count++;
-      if (a.fecha_atencion) {
-        p.eessMap[eessName].fechas.add(a.fecha_atencion);
-        if (!p.eessMap[eessName].minFecha || a.fecha_atencion < p.eessMap[eessName].minFecha) {
-          p.eessMap[eessName].minFecha = a.fecha_atencion;
+        const srvName = a.descripcion_servicio.trim();
+        if (!p.serviciosMap[srvName]) {
+          p.serviciosMap[srvName] = {
+            nombre: srvName,
+            codigo: a.cod_servicio || '',
+            count: 0,
+            tarifaTotal: 0,
+          };
         }
-        if (!p.eessMap[eessName].maxFecha || a.fecha_atencion > p.eessMap[eessName].maxFecha) {
-          p.eessMap[eessName].maxFecha = a.fecha_atencion;
-        }
-      }
-      if (a.descripcion_servicio) {
-        p.eessMap[eessName].servicios.add(a.descripcion_servicio);
+        p.serviciosMap[srvName].count++;
+        p.serviciosMap[srvName].tarifaTotal += Number(a.tarifa) || 0;
       }
 
       // Breakdown by Month of Attention (fecha_atencion)
@@ -199,6 +199,35 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
       p.mesesMap[mesInfo.key].count++;
       if (a.fecha_atencion) p.mesesMap[mesInfo.key].fechas.add(a.fecha_atencion);
       if (a.nombre_eess) p.mesesMap[mesInfo.key].eess.add(a.nombre_eess);
+
+      // Breakdown by EESS
+      const eessName = a.nombre_eess || 'EESS SIN NOMBRE';
+      if (!p.eessMap[eessName]) {
+        p.eessMap[eessName] = {
+          nombre: eessName,
+          codigo: a.codigo_eess || '',
+          count: 0,
+          mesesCounts: {},
+          fechas: new Set(),
+          servicios: new Set(),
+          minFecha: a.fecha_atencion || '',
+          maxFecha: a.fecha_atencion || '',
+        };
+      }
+      p.eessMap[eessName].count++;
+      p.eessMap[eessName].mesesCounts[mesInfo.key] = (p.eessMap[eessName].mesesCounts[mesInfo.key] || 0) + 1;
+      if (a.fecha_atencion) {
+        p.eessMap[eessName].fechas.add(a.fecha_atencion);
+        if (!p.eessMap[eessName].minFecha || a.fecha_atencion < p.eessMap[eessName].minFecha) {
+          p.eessMap[eessName].minFecha = a.fecha_atencion;
+        }
+        if (!p.eessMap[eessName].maxFecha || a.fecha_atencion > p.eessMap[eessName].maxFecha) {
+          p.eessMap[eessName].maxFecha = a.fecha_atencion;
+        }
+      }
+      if (a.descripcion_servicio) {
+        p.eessMap[eessName].servicios.add(a.descripcion_servicio);
+      }
     });
 
     return Object.values(map).sort((a, b) => b.totalAtenciones - a.totalAtenciones);
@@ -406,6 +435,192 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
     document.body.removeChild(link);
   };
 
+  // Download individual formatted Ficha PDF for a professional
+  const handleDownloadFichaPdf = (prof: ProfData) => {
+    // 1. Month list (chronological)
+    const profMeses = Object.values(prof.mesesMap).sort((a, b) => a.key.localeCompare(b.key));
+    const produccionMensual = profMeses.map(m => ({
+      mes: m.label,
+      count: m.count,
+      pct: Math.round((m.count / (prof.totalAtenciones || 1)) * 100),
+      dias: m.fechas.size,
+      eessCount: m.eess.size,
+    }));
+
+    // 2. Establecimiento de Salud Vs Mes de Atención Cross-tab Matrix
+    const meses = profMeses.map(m => {
+      let shortLabel = m.label;
+      const parts = m.label.split(' ');
+      if (parts.length >= 2) {
+        const mShort = parts[0].substring(0, 3);
+        const yShort = parts[1].length === 4 ? parts[1].substring(2) : parts[1];
+        shortLabel = `${mShort}'${yShort}`;
+      }
+      return {
+        key: m.key,
+        label: m.label,
+        shortLabel,
+      };
+    });
+
+    const eessVsMesFilas = Object.values(prof.eessMap)
+      .sort((a, b) => b.count - a.count)
+      .map(e => {
+        const valores = meses.map(m => e.mesesCounts?.[m.key] || 0);
+        const pct = Math.round((e.count / (prof.totalAtenciones || 1)) * 100);
+        return {
+          nombre: e.nombre,
+          codigo: e.codigo,
+          valores,
+          total: e.count,
+          pct,
+        };
+      });
+
+    const totalesPorMes = meses.map(m => prof.mesesMap[m.key]?.count || 0);
+
+    const eessVsMes = {
+      meses,
+      filas: eessVsMesFilas,
+      totalesPorMes,
+      granTotal: prof.totalAtenciones,
+    };
+
+    // 3. EESS list
+    const establecimientos = Object.values(prof.eessMap)
+      .sort((a, b) => b.count - a.count)
+      .map(e => ({
+        nombre: e.nombre,
+        codigo: e.codigo,
+        count: e.count,
+        pct: Math.round((e.count / (prof.totalAtenciones || 1)) * 100),
+        dias: e.fechas.size,
+        rangoFechas: `${e.minFecha} al ${e.maxFecha}`,
+      }));
+
+    // 4. Services list
+    const servicios = Object.values(prof.serviciosMap || {})
+      .sort((a, b) => b.count - a.count)
+      .map(s => ({
+        nombre: s.nombre,
+        codigo: s.codigo,
+        count: s.count,
+        pct: Math.round((s.count / (prof.totalAtenciones || 1)) * 100),
+        tarifaTotal: s.tarifaTotal,
+      }));
+
+    // 5. Sample attentions
+    const profAtenciones = atenciones.filter(a => {
+      if (prof.dni !== 'SIN_DNI') {
+        return a.dni_profesional === prof.dni;
+      }
+      return a.nombre_profesional === prof.nombre;
+    });
+
+    const muestrasAtenciones = profAtenciones.slice(0, 50).map(a => ({
+      fecha: a.fecha_atencion,
+      nroFormato: a.nro_formato || '',
+      eess: a.nombre_eess || '',
+      servicio: a.descripcion_servicio || '',
+      paciente: a.beneficiario || '',
+      docIdentidad: a.doc_identidad || '',
+    }));
+
+    PdfService.generateFichaProfesionalPdf({
+      profesional: {
+        nombre: prof.nombre,
+        dni: prof.dni,
+        tipo: prof.tipo,
+        colegiatura: prof.colegiatura,
+        rne: prof.rne,
+        totalAtenciones: prof.totalAtenciones,
+        diasAsistidos: prof.fechasAtencion.size,
+        totalEess: Object.keys(prof.eessMap).length,
+        totalMeses: Object.keys(prof.mesesMap).length,
+        minFecha: prof.minFecha,
+        maxFecha: prof.maxFecha,
+        montoTotal: prof.montoTotalFacturado,
+      },
+      produccionMensual,
+      eessVsMes,
+      establecimientos,
+      servicios,
+      muestrasAtenciones,
+    });
+  };
+
+  // Export to PDF
+  const handleExportPdf = () => {
+    if (activeTab === 'ficha' && currentProf) {
+      handleDownloadFichaPdf(currentProf);
+      return;
+    }
+
+    let titulo = 'B.3. PRODUCCIÓN POR PROFESIONAL DE LA SALUD';
+    let headers: string[] = [];
+    let rows: (string | number)[][] = [];
+    let filename = '';
+
+    if (activeTab === 'meses') {
+      titulo = 'B.3. PRODUCCIÓN MENSUAL POR PROFESIONAL (FECHA DE ATENCIÓN)';
+      headers = ['Profesional', 'DNI', 'Tipo', 'Total', 'Meses', ...allMonthsList.map(m => m.label)];
+      rows = filteredProfList.map(p => [
+        p.nombre,
+        p.dni,
+        p.tipo,
+        p.totalAtenciones,
+        Object.keys(p.mesesMap).length,
+        ...allMonthsList.map(m => p.mesesMap[m.key]?.count || 0),
+      ]);
+      filename = 'Produccion_Profesionales_Meses.pdf';
+    } else if (activeTab === 'eess') {
+      titulo = 'B.3. PRODUCCIÓN POR PROFESIONAL Y ESTABLECIMIENTO DE SALUD (EESS)';
+      headers = ['Profesional', 'Tipo', 'Establecimiento (EESS)', 'Atenciones', '% Dedicación', 'Días Lab.', 'Rango Fechas'];
+      rows = profEessPairs.slice(0, 150).map(item => [
+        item.profNombre,
+        item.profTipo,
+        item.eessNombre,
+        item.count,
+        `${item.pctOfProf}%`,
+        item.diasLaborados,
+        `${item.minFecha} al ${item.maxFecha}`,
+      ]);
+      filename = 'Produccion_Profesionales_EESS.pdf';
+    } else {
+      headers = ['Profesional', 'DNI', 'Tipo', 'Colegiatura', 'Total Aten.', 'Días', 'Prom/Día', 'EESS'];
+      rows = filteredProfList.map(p => {
+        const dias = p.fechasAtencion.size || 1;
+        const prom = (p.totalAtenciones / dias).toFixed(1);
+        return [
+          p.nombre,
+          p.dni,
+          p.tipo,
+          p.colegiatura || 'S/C',
+          p.totalAtenciones,
+          dias,
+          prom,
+          Object.keys(p.eessMap).length,
+        ];
+      });
+      filename = 'Directorio_Profesionales_Salud.pdf';
+    }
+
+    PdfService.generateEstadisticaPdf({
+      titulo,
+      subtitulo: `Filtros: Tipo: ${selectedTipo} | EESS: ${selectedEessFilter} | Mes: ${selectedMesFilter} | Búsqueda: "${searchTerm || 'Ninguna'}"`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total Profesionales', valor: filteredProfList.length },
+        { label: 'Atenciones Verificadas', valor: totalAtencionesFiltradas },
+        { label: 'Filtro Tipo', valor: selectedTipo },
+        { label: 'Filtro EESS', valor: selectedEessFilter },
+      ],
+      orientation: 'landscape',
+      filename,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -445,7 +660,15 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Exportar CSV</span>
+              <span>CSV</span>
+            </button>
+            <button
+              onClick={handleExportPdf}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              title="Descargar reporte en formato PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
             </button>
           </div>
         </div>
@@ -775,16 +998,28 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                             {prom}
                           </td>
                           <td className="py-3 px-3 text-center">
-                            <button
-                              onClick={() => {
-                                setSelectedProfDni(p.dni);
-                                setActiveTab('ficha');
-                              }}
-                              className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white transition-colors cursor-pointer"
-                              title="Ver ficha completa de producción"
-                            >
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-center space-x-1">
+                              <button
+                                onClick={() => {
+                                  setSelectedProfDni(p.dni);
+                                  setActiveTab('ficha');
+                                }}
+                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white transition-colors cursor-pointer"
+                                title="Ver ficha completa de producción"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadFichaPdf(p);
+                                }}
+                                className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition-colors cursor-pointer"
+                                title="Descargar Ficha Estadística en PDF"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -911,15 +1146,27 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                         })}
 
                         <td className="py-2.5 px-3 text-center">
-                          <button
-                            onClick={() => {
-                              setSelectedProfDni(p.dni);
-                              setActiveTab('ficha');
-                            }}
-                            className="text-[10px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
-                          >
-                            Ver Ficha
-                          </button>
+                          <div className="flex items-center justify-center space-x-1">
+                            <button
+                              onClick={() => {
+                                setSelectedProfDni(p.dni);
+                                setActiveTab('ficha');
+                              }}
+                              className="text-[10px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+                            >
+                              Ver Ficha
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadFichaPdf(p);
+                              }}
+                              className="p-1 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition-colors cursor-pointer"
+                              title="Descargar Ficha Estadística en PDF"
+                            >
+                              <FileText className="w-3 h-3" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1024,16 +1271,29 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => {
-                            setSelectedProfDni(item.profDni);
-                            setActiveTab('ficha');
-                          }}
-                          className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white transition-colors cursor-pointer"
-                          title="Ver ficha individual"
-                        >
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-center space-x-1">
+                          <button
+                            onClick={() => {
+                              setSelectedProfDni(item.profDni);
+                              setActiveTab('ficha');
+                            }}
+                            className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white transition-colors cursor-pointer"
+                            title="Ver ficha individual"
+                          >
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const prof = profAggregated.find(p => p.dni === item.profDni);
+                              if (prof) handleDownloadFichaPdf(prof);
+                            }}
+                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition-colors cursor-pointer"
+                            title="Descargar Ficha en PDF"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1077,20 +1337,31 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
                 </div>
               </div>
 
-              {/* Selector to switch professional */}
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-slate-400">Cambiar profesional:</span>
-                <select
-                  value={currentProf.dni}
-                  onChange={e => setSelectedProfDni(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:border-emerald-500"
+              {/* Selector to switch professional & Download Ficha PDF */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  onClick={() => handleDownloadFichaPdf(currentProf)}
+                  className="flex items-center space-x-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/30 transition-all cursor-pointer whitespace-nowrap"
+                  title="Descargar Ficha en formato PDF oficial para imprimir o auditar"
                 >
-                  {profAggregated.map(p => (
-                    <option key={p.dni + p.nombre} value={p.dni}>
-                      {p.nombre} ({p.totalAtenciones} aten.)
-                    </option>
-                  ))}
-                </select>
+                  <FileText className="w-4 h-4" />
+                  <span>Descargar Ficha PDF</span>
+                </button>
+
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-slate-400">Cambiar profesional:</span>
+                  <select
+                    value={currentProf.dni}
+                    onChange={e => setSelectedProfDni(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:border-emerald-500 max-w-xs"
+                  >
+                    {profAggregated.map(p => (
+                      <option key={p.dni + p.nombre} value={p.dni}>
+                        {p.nombre} ({p.totalAtenciones} aten.)
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1129,13 +1400,13 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
 
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                  Meses de Producción
+                  Facturación SIS Estimada
                 </span>
                 <div className="text-2xl font-black font-mono text-amber-400 mt-1">
-                  {Object.keys(currentProf.mesesMap).length}
+                  S/ {currentProf.montoTotalFacturado.toFixed(2)}
                 </div>
                 <span className="text-[10px] text-slate-400">
-                  {currentProf.minFecha} al {currentProf.maxFecha}
+                  {Object.keys(currentProf.serviciosMap).length} servicios distintos
                 </span>
               </div>
             </div>
@@ -1217,16 +1488,76 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
             </div>
           </div>
 
-          {/* Breakdown 3: Chronological Attentions List for this professional */}
+          {/* Breakdown 3: By Servicios Clínicos Realizados */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center space-x-2">
+                  <Activity className="w-4 h-4 text-emerald-600" />
+                  <span>Cartera de Servicios Clínicos que ha Realizado</span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Distribución de prestaciones y procedimientos clínicos ejecutados por el profesional
+                </p>
+              </div>
+              <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 self-start sm:self-auto">
+                {Object.keys(currentProf.serviciosMap).length} Servicios Realizados
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Object.values(currentProf.serviciosMap)
+                .sort((a, b) => b.count - a.count)
+                .map(s => {
+                  const pct = Math.round((s.count / (currentProf.totalAtenciones || 1)) * 100);
+                  return (
+                    <div key={s.nombre} className="p-3 rounded-xl bg-emerald-50/40 border border-emerald-100 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-start justify-between gap-2 text-xs mb-1">
+                          <span className="font-bold text-slate-900 line-clamp-2" title={s.nombre}>
+                            {s.nombre}
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700 whitespace-nowrap">
+                            {s.count} aten.
+                          </span>
+                        </div>
+                        <div className="w-full bg-emerald-200/80 rounded-full h-1.5 overflow-hidden my-1.5">
+                          <div
+                            className="h-full bg-emerald-600 rounded-full"
+                            style={{ width: `${pct}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-emerald-100/60 font-mono">
+                        <span>{pct}% de su cartera</span>
+                        <span className="font-bold text-slate-700">Fact: S/ {s.tarifaTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* Breakdown 4: Chronological Attentions List for this professional */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-emerald-600" />
-                <span>Atenciones Verificadas por Fecha de Atención ({currentProfAtenciones.length})</span>
-              </span>
-              <span className="text-xs text-slate-400">
-                Ordenadas cronológicamente por fecha clínica
-              </span>
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
+                  <Calendar className="w-4 h-4 text-emerald-600" />
+                  <span>Atenciones Verificadas por Fecha de Atención ({currentProfAtenciones.length})</span>
+                </span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">
+                  Listado cronológico individual para auditoría de FUAs
+                </span>
+              </div>
+              <button
+                onClick={() => handleDownloadFichaPdf(currentProf)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer self-start sm:self-auto"
+                title="Descargar Ficha Estadística en PDF"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Exportar Ficha PDF</span>
+              </button>
             </div>
 
             <div className="overflow-x-auto max-h-96">

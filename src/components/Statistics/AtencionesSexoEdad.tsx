@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Users, Filter } from 'lucide-react';
+import { Users, Filter, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -55,6 +56,31 @@ export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones }) => {
   const pctHombres = Math.round((totalHombres / totalGral) * 100);
   const pctMujeres = Math.round((totalMujeres / totalGral) * 100);
 
+  const handleExportPdf = () => {
+    const headers = ['Grupo Etario', 'Hombres (M)', '% Hombres', 'Mujeres (F)', '% Mujeres', 'Total Grupo', '% Total'];
+    const rows = pyramidData.map(d => {
+      const pctH = d.total > 0 ? `${Math.round((d.hombres / d.total) * 100)}%` : '0%';
+      const pctM = d.total > 0 ? `${Math.round((d.mujeres / d.total) * 100)}%` : '0%';
+      const pctTot = totalGral > 0 ? `${Math.round((d.total / totalGral) * 100)}%` : '0%';
+      return [d.label, d.hombres, pctH, d.mujeres, pctM, d.total, pctTot];
+    });
+
+    PdfService.generateEstadisticaPdf({
+      titulo: 'B.5. ATENCIONES POR SEXO Y GRUPOS ETARIOS',
+      subtitulo: `Filtro Rango: ${selectedRango} | Total Población: ${totalGral} atenciones`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total Atenciones', valor: totalGral },
+        { label: 'Hombres', valor: `${totalHombres} (${pctHombres}%)` },
+        { label: 'Mujeres', valor: `${totalMujeres} (${pctMujeres}%)` },
+        { label: 'Grupos Etarios', valor: AGE_GROUPS.length },
+      ],
+      orientation: 'landscape',
+      filename: `Distribucion_Sexo_Edad_${new Date().toISOString().substring(0, 10)}.pdf`,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -68,19 +94,30 @@ export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones }) => {
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 bg-slate-100 px-3 py-1.5 rounded-xl text-xs font-semibold">
-          <Filter className="w-3.5 h-3.5 text-slate-500" />
-          <span>Rango Etario:</span>
-          <select
-            value={selectedRango}
-            onChange={e => setSelectedRango(e.target.value)}
-            className="bg-transparent font-bold text-slate-800 focus:outline-none"
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-2 bg-slate-100 px-3 py-1.5 rounded-xl text-xs font-semibold">
+            <Filter className="w-3.5 h-3.5 text-slate-500" />
+            <span>Rango Etario:</span>
+            <select
+              value={selectedRango}
+              onChange={e => setSelectedRango(e.target.value)}
+              className="bg-transparent font-bold text-slate-800 focus:outline-none"
+            >
+              <option value="TODOS">Todos los Grupos Etarios</option>
+              {AGE_GROUPS.map(g => (
+                <option key={g.label} value={g.label}>{g.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleExportPdf}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+            title="Exportar reporte en formato PDF"
           >
-            <option value="TODOS">Todos los Grupos Etarios</option>
-            {AGE_GROUPS.map(g => (
-              <option key={g.label} value={g.label}>{g.label}</option>
-            ))}
-          </select>
+            <FileText className="w-3.5 h-3.5" />
+            <span>Exportar PDF</span>
+          </button>
         </div>
       </div>
 

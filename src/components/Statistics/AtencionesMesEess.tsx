@@ -105,8 +105,30 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
           </button>
 
           <button
-            onClick={() => PdfService.generateReporteGeneral(filtered, `Año: ${selectedYear} | EESS: ${selectedEess}`, 'ATENCIONES POR MES Y EESS')}
-            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center space-x-1 shadow-sm transition-colors cursor-pointer"
+            onClick={() => {
+              const headers = ['Establecimiento de Salud (EESS)', ...allMonths, 'Total'];
+              const rows = displayEessList.map(e => {
+                const eessTotal = Object.values(matrix[e] || {}).reduce((a, b) => a + b, 0);
+                const cols = allMonths.map(m => matrix[e]?.[m] || 0);
+                return [e, ...cols, eessTotal];
+              });
+              rows.push(['TOTAL GENERAL', ...allMonths.map(m => monthTotals[m] || 0), grandTotal]);
+
+              PdfService.generateEstadisticaPdf({
+                titulo: 'B.1. MATRIZ DE ATENCIONES POR MES Y ESTABLECIMIENTO DE SALUD',
+                subtitulo: `Año: ${selectedYear} | EESS: ${selectedEess}`,
+                headers,
+                rows,
+                resumenKpis: [
+                  { label: 'Total Atenciones', valor: grandTotal },
+                  { label: 'EESS Evaluados', valor: displayEessList.length },
+                  { label: 'Meses Registrados', valor: allMonths.length },
+                ],
+                orientation: 'landscape',
+                filename: `Matriz_Atenciones_Mes_EESS_${selectedYear}.pdf`,
+              });
+            }}
+            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center space-x-1 shadow-sm transition-colors cursor-pointer"
           >
             <FileText className="w-3.5 h-3.5" />
             <span>PDF</span>

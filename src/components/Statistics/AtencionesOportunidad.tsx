@@ -17,8 +17,10 @@ import {
   ChevronRight,
   Info,
   User,
+  FileText,
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -418,6 +420,90 @@ export const AtencionesOportunidad: React.FC<Props> = ({ atenciones }) => {
     document.body.removeChild(link);
   };
 
+  // Export to PDF
+  const handleExportPdf = () => {
+    let titulo = 'B.9. OPORTUNIDAD DE DIGITACIÓN DE ATENCIONES';
+    let headers: string[] = [];
+    let rows: (string | number)[][] = [];
+    let filename = '';
+
+    if (activeTab === 'puntos') {
+      titulo = 'B.9. OPORTUNIDAD POR PUNTO DE DIGITACIÓN';
+      headers = ['Punto de Digitación', 'Código', 'Total', '0-10d (Oportuno)', '11-29d (Demora)', '≥30d (Rezagado)', 'Desfase Prom.', '% Meta'];
+      rows = dataByPunto.map(p => [
+        p.nombre,
+        p.cod,
+        p.total,
+        `${p.c0_10} (${p.pct0_10}%)`,
+        `${p.c11_29} (${p.pct11_29}%)`,
+        `${p.c30_mas} (${p.pct30_mas}%)`,
+        `${p.avg} días`,
+        `${p.pct0_10}%`,
+      ]);
+      filename = 'Oportunidad_Puntos_Digitacion.pdf';
+    } else if (activeTab === 'eess') {
+      titulo = 'B.9. OPORTUNIDAD POR ESTABLECIMIENTO DE SALUD (EESS)';
+      headers = ['Establecimiento (EESS)', 'Total', '0-10d (Oportuno)', '11-29d (Demora)', '≥30d (Rezagado)', 'Desfase Prom.', '% Meta'];
+      rows = dataByEess.map(e => [
+        e.nombre,
+        e.total,
+        `${e.c0_10} (${e.pct0_10}%)`,
+        `${e.c11_29} (${e.pct11_29}%)`,
+        `${e.c30_mas} (${e.pct30_mas}%)`,
+        `${e.avg} días`,
+        `${e.pct0_10}%`,
+      ]);
+      filename = 'Oportunidad_EESS.pdf';
+    } else if (activeTab === 'meses') {
+      titulo = 'B.9. OPORTUNIDAD POR MES DE ATENCIÓN';
+      headers = ['Mes de Atención', 'Total', '0-10d (Oportuno)', '11-29d (Demora)', '≥30d (Rezagado)', 'Desfase Prom.', '% Meta'];
+      rows = dataByMes.map(m => [
+        m.mes,
+        m.total,
+        `${m.c0_10} (${m.pct0_10}%)`,
+        `${m.c11_29} (${m.pct11_29}%)`,
+        `${m.c30_mas} (${m.pct30_mas}%)`,
+        `${m.avg} días`,
+        `${m.pct0_10}%`,
+      ]);
+      filename = 'Oportunidad_Meses.pdf';
+    } else {
+      titulo = `B.9. DETALLE INDIVIDUAL DE OPORTUNIDAD (${selectedRango})`;
+      headers = ['N° Formato', 'Fecha Atención', 'Fecha Registro', 'Días', 'Rango', 'Punto', 'EESS', 'Paciente'];
+      rows = filteredList.slice(0, 300).map(a => {
+        const dias = getDiasDiferencia(a.fecha_atencion, a.fecha_registro);
+        const info = getRangoInfo(dias);
+        return [
+          a.nro_formato || '',
+          a.fecha_atencion || '',
+          a.fecha_registro || '',
+          dias !== null ? String(dias) : '—',
+          info.label,
+          (a.punto_digitacion || '').substring(0, 18),
+          (a.nombre_eess || '').substring(0, 20),
+          (a.beneficiario || '').substring(0, 18),
+        ];
+      });
+      filename = `Detalle_Oportunidad_${selectedRango}.pdf`;
+    }
+
+    PdfService.generateEstadisticaPdf({
+      titulo,
+      subtitulo: `Filtro Rango: ${selectedRango} | Punto: ${selectedPunto} | EESS: ${selectedEess}`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total Atenciones', valor: atenciones.length },
+        { label: '0-10 días (Oportuno)', valor: `${globalOpportunity.count0_10} (${globalOpportunity.pct0_10}%)` },
+        { label: '11-29 días (Demora)', valor: `${globalOpportunity.count11_29} (${globalOpportunity.pct11_29}%)` },
+        { label: '≥30 días (Rezagado)', valor: `${globalOpportunity.count30_mas} (${globalOpportunity.pct30_mas}%)` },
+        { label: 'Desfase Promedio', valor: `${globalOpportunity.avgDays} días` },
+      ],
+      orientation: 'landscape',
+      filename,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header and Title */}
@@ -443,10 +529,21 @@ export const AtencionesOportunidad: React.FC<Props> = ({ atenciones }) => {
             <Layers className="w-3.5 h-3.5 text-blue-500" />
             <span>Total: {atenciones.length} Atenciones</span>
           </span>
-          <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Meta SIS: ≤ 10 días</span>
-          </span>
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>CSV</span>
+          </button>
+          <button
+            onClick={handleExportPdf}
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+            title="Exportar reporte en formato PDF"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Exportar PDF</span>
+          </button>
         </div>
       </div>
 

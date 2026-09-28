@@ -1,6 +1,7 @@
 import React from 'react';
-import { Heart, Baby, Activity, AlertCircle } from 'lucide-react';
+import { Heart, Baby, Activity, AlertCircle, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -24,16 +25,57 @@ export const AtencionesCondicionMaterna: React.FC<Props> = ({ atenciones }) => {
     gestantesPorEess[a.nombre_eess] = (gestantesPorEess[a.nombre_eess] || 0) + 1;
   });
 
+  const handleExportPdf = () => {
+    const headers = ['Condición Materna / Establecimiento', 'Atenciones', '% Relativo', '% Total'];
+    const rows: (string | number)[][] = [
+      ['Gestantes (Control Prenatal)', gestantes, `${totalMaterno > 0 ? Math.round((gestantes / totalMaterno) * 100) : 0}%`, `${((gestantes / atenciones.length) * 100).toFixed(1)}%`],
+      ['Puérperas (Postparto)', puerperas, `${totalMaterno > 0 ? Math.round((puerperas / totalMaterno) * 100) : 0}%`, `${((puerperas / atenciones.length) * 100).toFixed(1)}%`],
+      ['No Gestantes (Mujeres MEF)', noGestantes, `${totalMaterno > 0 ? Math.round((noGestantes / totalMaterno) * 100) : 0}%`, `${((noGestantes / atenciones.length) * 100).toFixed(1)}%`],
+      ['No Aplica / Otros', noAplica, '—', `${((noAplica / atenciones.length) * 100).toFixed(1)}%`],
+    ];
+
+    const eessEntries = Object.entries(gestantesPorEess).sort((a, b) => b[1] - a[1]);
+    eessEntries.forEach(([eess, count]) => {
+      rows.push([`  • Gestantes en: ${eess}`, count, `${Math.round((count / (gestantes || 1)) * 100)}% de gestantes`, '—']);
+    });
+
+    PdfService.generateEstadisticaPdf({
+      titulo: 'B.6. ATENCIONES POR CONDICIÓN MATERNA',
+      subtitulo: 'Seguimiento a Gestantes, Puérperas y MEF en Establecimientos de Salud',
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Gestantes', valor: gestantes },
+        { label: 'Puérperas', valor: puerperas },
+        { label: 'Total Materno', valor: totalMaterno },
+        { label: 'Mujeres MEF (12-49a)', valor: mujeresMEF.length },
+      ],
+      orientation: 'portrait',
+      filename: `Condicion_Materna_${new Date().toISOString().substring(0, 10)}.pdf`,
+    });
+  };
+
   return (
     <div className="space-y-6">
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <h2 className="text-xl font-extrabold text-slate-900 flex items-center space-x-2">
-          <Heart className="w-6 h-6 text-pink-600" />
-          <span>B.6. Atenciones por Condición Materna</span>
-        </h2>
-        <p className="text-xs text-slate-500 mt-1">
-          Seguimiento a la salud materna, control prenatal, puérperas y mujeres en edad fértil (MEF)
-        </p>
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-extrabold text-slate-900 flex items-center space-x-2">
+            <Heart className="w-6 h-6 text-pink-600" />
+            <span>B.6. Atenciones por Condición Materna</span>
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Seguimiento a la salud materna, control prenatal, puérperas y mujeres en edad fértil (MEF)
+          </p>
+        </div>
+
+        <button
+          onClick={handleExportPdf}
+          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer self-start md:self-auto"
+          title="Exportar reporte en formato PDF"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Exportar PDF</span>
+        </button>
       </div>
 
       {/* Metric Cards */}

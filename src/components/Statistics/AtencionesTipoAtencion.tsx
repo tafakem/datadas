@@ -1,6 +1,7 @@
 import React from 'react';
-import { Bed, UserCheck, Home, MapPin } from 'lucide-react';
+import { Bed, UserCheck, Home, MapPin, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -18,16 +19,54 @@ export const AtencionesTipoAtencion: React.FC<Props> = ({ atenciones }) => {
   const intramural = atenciones.filter(a => a.lugar_atencion === 'INTRAMURAL').length;
   const extramural = atenciones.filter(a => a.lugar_atencion === 'EXTRAMURAL').length;
 
+  const handleExportPdf = () => {
+    const headers = ['Categoría', 'Clasificación', 'Atenciones', '% Participación'];
+    const rows: (string | number)[][] = [
+      ['Modalidad Asistencial', 'Ambulatorio', ambulatorio, `${Math.round((ambulatorio / total) * 100)}%`],
+      ['Modalidad Asistencial', 'Hospitalizado', hospitalizado, `${Math.round((hospitalizado / total) * 100)}%`],
+      ['Modalidad Asistencial', 'Emergencia', emergencia, `${Math.round((emergencia / total) * 100)}%`],
+      ['Lugar de Prestación', 'Intramural (Dentro del EESS)', intramural, `${Math.round((intramural / total) * 100)}%`],
+      ['Lugar de Prestación', 'Extramural (Comunidad / Campaña)', extramural, `${Math.round((extramural / total) * 100)}%`],
+    ];
+
+    PdfService.generateEstadisticaPdf({
+      titulo: 'B.7. ATENCIONES POR MODALIDAD Y LUGAR DE ATENCIÓN',
+      subtitulo: 'Ambulatorio vs Hospitalario | Intramural vs Extramural',
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total Atenciones', valor: atenciones.length },
+        { label: 'Ambulatorio', valor: ambulatorio },
+        { label: 'Hospitalizado', valor: hospitalizado },
+        { label: 'Intramural', valor: intramural },
+        { label: 'Extramural', valor: extramural },
+      ],
+      orientation: 'portrait',
+      filename: `Tipo_Lugar_Atencion_${new Date().toISOString().substring(0, 10)}.pdf`,
+    });
+  };
+
   return (
     <div className="space-y-6">
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <h2 className="text-xl font-extrabold text-slate-900 flex items-center space-x-2">
-          <Bed className="w-6 h-6 text-blue-600" />
-          <span>B.7. Atenciones por Modalidad y Lugar de Atención</span>
-        </h2>
-        <p className="text-xs text-slate-500 mt-1">
-          Comparativa entre atención ambulatoria vs hospitalizada, y prestaciones intramurales vs campañas extramurales
-        </p>
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-extrabold text-slate-900 flex items-center space-x-2">
+            <Bed className="w-6 h-6 text-blue-600" />
+            <span>B.7. Atenciones por Modalidad y Lugar de Atención</span>
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Comparativa entre atención ambulatoria vs hospitalizada, y prestaciones intramurales vs campañas extramurales
+          </p>
+        </div>
+
+        <button
+          onClick={handleExportPdf}
+          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer self-start md:self-auto"
+          title="Exportar reporte en formato PDF"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Exportar PDF</span>
+        </button>
       </div>
 
       {/* Grid 2 Blocks: Tipo and Lugar */}

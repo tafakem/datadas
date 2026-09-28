@@ -1,6 +1,7 @@
 import React from 'react';
-import { MapPin, Globe, Building, Award } from 'lucide-react';
+import { MapPin, Globe, Building, Award, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -46,6 +47,36 @@ export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap })
     }))
     .sort((a, b) => b.atenciones - a.atenciones);
 
+  const handleExportPdf = () => {
+    const headers = ['DISA / DIRESA / Región', 'Total Atenciones', '% Demanda', 'EESS de Salud', 'Profesionales', 'Servicios', 'Facturado (S/)'];
+    const rows: (string | number)[][] = list.map(r => [
+      r.disa,
+      r.atenciones,
+      `${r.porcentaje}%`,
+      r.eessCount,
+      r.profCount,
+      r.srvCount,
+      `S/ ${r.monto.toFixed(2)}`,
+    ]);
+
+    const totalFact = list.reduce((acc, r) => acc + r.monto, 0);
+
+    PdfService.generateEstadisticaPdf({
+      titulo: 'B.8. CONSOLIDADO DE ATENCIONES POR DISA / DIRESA / REGIÓN',
+      subtitulo: 'Distribución Territorial y Descentralización de Servicios de Salud',
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total Atenciones', valor: atenciones.length },
+        { label: 'Regiones / DISA', valor: list.length },
+        { label: 'Facturación Total', valor: `S/ ${totalFact.toFixed(2)}` },
+        { label: 'DISA Principal', valor: list[0]?.disa || 'N/A' },
+      ],
+      orientation: 'landscape',
+      filename: `Atenciones_Por_DISA_${new Date().toISOString().substring(0, 10)}.pdf`,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -59,13 +90,23 @@ export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap })
           </p>
         </div>
 
-        <button
-          onClick={onNavigateToMap}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-sm transition-colors cursor-pointer"
-        >
-          <MapPin className="w-4 h-4 text-emerald-300" />
-          <span>Abrir Mapa Interactivo</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExportPdf}
+            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
+            title="Exportar reporte territorial en formato PDF"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Exportar PDF</span>
+          </button>
+          <button
+            onClick={onNavigateToMap}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-sm transition-colors cursor-pointer"
+          >
+            <MapPin className="w-4 h-4 text-emerald-300" />
+            <span>Abrir Mapa Interactivo</span>
+          </button>
+        </div>
       </div>
 
       {/* DISA Regional Cards */}

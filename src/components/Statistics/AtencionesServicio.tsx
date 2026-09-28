@@ -14,8 +14,10 @@ import {
   CheckCircle2,
   ArrowRight,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -315,6 +317,68 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones }) => {
     document.body.removeChild(link);
   };
 
+  // Export to PDF
+  const handleExportPdf = () => {
+    let titulo = 'B.4. ATENCIONES POR SERVICIO DE SALUD';
+    let headers: string[] = [];
+    let rows: (string | number)[][] = [];
+    let filename = '';
+
+    if (activeTab === 'meses') {
+      titulo = 'B.4. DISTRIBUCIÓN MENSUAL POR SERVICIO (FECHA DE ATENCIÓN)';
+      headers = ['Cód.', 'Descripción Servicio', 'Total', 'Tarifa (S/)', ...allMonthsList.map(m => m.label)];
+      rows = serviceList.map(s => [
+        s.cod,
+        s.desc,
+        s.count,
+        `S/ ${s.totalTarifa.toFixed(2)}`,
+        ...allMonthsList.map(m => s.mesesMap[m.key]?.count || 0),
+      ]);
+      filename = 'Servicios_Mensual_Fecha_Atencion.pdf';
+    } else if (activeTab === 'eess') {
+      titulo = 'B.4. SERVICIOS POR ESTABLECIMIENTO DE SALUD (EESS)';
+      headers = ['Cód.', 'Servicio', 'Establecimiento (EESS)', 'Cód. EESS', 'Atenciones', '% Demanda', 'Pacientes', 'Tarifa (S/)'];
+      rows = serviceEessPairs.slice(0, 150).map(item => [
+        item.serviceCod,
+        item.serviceDesc,
+        item.eessNombre,
+        item.eessCodigo,
+        item.count,
+        `${item.pctOfService}%`,
+        item.pacientesCount,
+        `S/ ${item.tarifa.toFixed(2)}`,
+      ]);
+      filename = 'Servicios_Por_Establecimiento.pdf';
+    } else {
+      headers = ['Cód.', 'Descripción del Servicio', 'EESS Oferentes', 'Pacientes Únicos', 'Atenciones', '% Demanda', 'Tarifa (S/)'];
+      rows = serviceList.map(s => [
+        s.cod,
+        s.desc,
+        s.eess.size,
+        s.pacientesUnicos.size,
+        s.count,
+        `${((s.count / totalAtenciones) * 100).toFixed(1)}%`,
+        `S/ ${s.totalTarifa.toFixed(2)}`,
+      ]);
+      filename = 'Estadistica_Servicios_Salud.pdf';
+    }
+
+    PdfService.generateEstadisticaPdf({
+      titulo,
+      subtitulo: `Filtros: EESS: ${selectedEessFilter} | Mes: ${selectedMesFilter} | Búsqueda: "${searchTerm || 'Ninguna'}"`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Servicios Activos', valor: serviceList.length },
+        { label: 'Total Atenciones', valor: filteredAtenciones.length },
+        { label: 'Total Facturado', valor: `S/ ${totalTarifa.toFixed(2)}` },
+        { label: 'Pestaña', valor: activeTab.toUpperCase() },
+      ],
+      orientation: 'landscape',
+      filename,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -358,7 +422,15 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones }) => {
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Exportar CSV</span>
+              <span>CSV</span>
+            </button>
+            <button
+              onClick={handleExportPdf}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              title="Descargar reporte en formato PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
             </button>
           </div>
         </div>

@@ -12,6 +12,7 @@ import {
   Users,
   Building2,
   FileSpreadsheet,
+  FileText,
   Download,
   Filter,
   X,
@@ -21,6 +22,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -535,6 +537,65 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
     document.body.removeChild(link);
   };
 
+  const handleExportRankingPdf = () => {
+    const headers = ['Punto de Digitación', 'Código', 'Atenciones', '% Carga', 'EESS Asignados', 'Digitadores'];
+    const rows = fullRanking.map(r => [
+      r.nombre,
+      r.cod,
+      r.count,
+      `${r.porcentaje}%`,
+      r.eessCount,
+      r.digitadoresCount,
+    ]);
+
+    PdfService.generateEstadisticaPdf({
+      titulo: 'B.2. RANKING DE PRODUCCIÓN POR PUNTO DE DIGITACIÓN',
+      subtitulo: `Total Puntos: ${fullRanking.length} | Atenciones Analizadas: ${puntoAtenciones.length}`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total Atenciones', valor: puntoAtenciones.length },
+        { label: 'Puntos Activos', valor: fullRanking.length },
+        { label: 'Punto Seleccionado', valor: selectedPunto },
+        { label: 'Mayor Producción', valor: fullRanking[0]?.nombre || 'N/A' },
+      ],
+      orientation: 'landscape',
+      filename: `Ranking_Punto_Digitacion_${new Date().toISOString().substring(0, 10)}.pdf`,
+    });
+  };
+
+  const handleExportDetailPdf = () => {
+    const headers = ['N° Formato', 'Fecha Atención', 'Fecha Registro', 'Días Desfase', 'Rango', 'Punto', 'EESS', 'Paciente'];
+    const rows = detailList.slice(0, 300).map(a => {
+      const delay = calculateDaysDifference(a.fecha_atencion, a.fecha_registro);
+      const rango = delay === null ? 'S/F' : delay <= 10 ? '0-10d' : delay <= 29 ? '11-29d' : '≥30d';
+      return [
+        a.nro_formato || '',
+        a.fecha_atencion || '',
+        a.fecha_registro || '',
+        delay !== null ? String(delay) : '—',
+        rango,
+        (a.punto_digitacion || '').substring(0, 20),
+        (a.nombre_eess || '').substring(0, 22),
+        (a.beneficiario || '').substring(0, 20),
+      ];
+    });
+
+    PdfService.generateEstadisticaPdf({
+      titulo: `B.2. DETALLE DE ATENCIONES - ${activePunto}`,
+      subtitulo: `Filtro Mes: ${selectedMesFiltro || 'Todos'} | Rango: ${selectedRangoFiltro} | Evaluados: ${detailList.length}`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Punto Seleccionado', valor: activePunto },
+        { label: 'Registros', valor: detailList.length },
+        { label: 'Promedio Desfase', valor: `${kpiData.avgDelayGeneral} días` },
+      ],
+      orientation: 'landscape',
+      filename: `Detalle_Digitacion_${activePunto.replace(/\s+/g, '_')}.pdf`,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header and Search / Filter Bar */}
@@ -556,16 +617,24 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Quick Stats Pill */}
+          {/* Quick Stats Pill & Export */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200">
               <Layers className="w-3.5 h-3.5 text-indigo-500" />
-              <span>{fullRanking.length} Puntos de Digitación</span>
+              <span>{fullRanking.length} Puntos</span>
             </span>
             <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 text-xs font-bold border border-blue-200">
               <Calendar className="w-3.5 h-3.5 text-blue-600" />
-              <span>{puntoAtenciones.length} Atenciones Analizadas</span>
+              <span>{puntoAtenciones.length} Atenciones</span>
             </span>
+            <button
+              onClick={handleExportRankingPdf}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              title="Descargar reporte PDF del ranking de puntos de digitación"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
+            </button>
           </div>
         </div>
 
@@ -1646,14 +1715,22 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
               </select>
             </div>
 
-            {/* Export Button */}
+            {/* Export Buttons */}
             <button
               onClick={handleExportCSV}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
               title="Descargar listado en formato CSV"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Exportar CSV</span>
+              <span>CSV</span>
+            </button>
+            <button
+              onClick={handleExportDetailPdf}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              title="Descargar listado detallado en formato PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>PDF</span>
             </button>
           </div>
         </div>

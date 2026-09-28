@@ -19,6 +19,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
+import { PdfService } from '../../services/pdfService';
 
 interface Props {
   atenciones: Atencion[];
@@ -446,6 +447,78 @@ export const AtencionesRegistroVsAtencion: React.FC<Props> = ({
     document.body.removeChild(link);
   };
 
+  // Export to PDF
+  const handleExportPdf = () => {
+    let titulo = 'B.10. PERÍODO DE REGISTRO VS MES DE ATENCIÓN';
+    let headers: string[] = [];
+    let rows: (string | number)[][] = [];
+    let filename = '';
+
+    if (activeTab === 'periodo' && focusedPeriodBreakdown && focusedPeriodInfo) {
+      titulo = `B.10. AUDITORÍA DEL PERÍODO: ${focusedPeriodInfo.label}`;
+      headers = ['Mes Clínico de Atención', 'Clasificación Rezago', 'FUAs Digitados', '% del Período'];
+      rows = focusedPeriodBreakdown.mesList.map(m => [
+        m.label,
+        m.key === focusedPeriodKey ? 'Mismo Mes (Al Día)' : `Rezago ${m.lag} Meses`,
+        m.count,
+        `${m.pct}%`,
+      ]);
+      filename = `Periodo_${focusedPeriodKey}_Desglose.pdf`;
+    } else if (activeTab === 'punto') {
+      titulo = 'B.10. DESEMPEÑO POR PUNTO DE DIGITACIÓN (OPORTUNIDAD DE MES)';
+      headers = ['Punto de Digitación', 'Total FUAs', 'Mismo Mes (Al Día)', 'Rezago 1 Mes', 'Rezago 2+ Meses', '% Al Día'];
+      rows = puntoAnalysisTable.map(p => [
+        p.nombre,
+        p.totalDigitado,
+        p.mismoMes,
+        p.rezagado1,
+        p.rezagado2Mas,
+        `${p.pctOportuno}%`,
+      ]);
+      filename = 'Puntos_Oportunidad_Mes.pdf';
+    } else if (activeTab === 'detalle') {
+      titulo = 'B.10. DETALLE INDIVIDUAL DE FUAS (REGISTRO VS ATENCIÓN)';
+      headers = ['N° Formato', 'Fecha Atención', 'Fecha Registro', 'Desfase', 'Clasificación', 'Punto', 'EESS'];
+      rows = filteredDetail.slice(0, 300).map(a => {
+        const lag = calculateMonthLag(a.fecha_atencion, a.fecha_registro);
+        return [
+          a.nro_formato || '',
+          a.fecha_atencion || '',
+          a.fecha_registro || '',
+          `${lag.lagMonths}m`,
+          lag.label,
+          (a.punto_digitacion || '').substring(0, 18),
+          (a.nombre_eess || '').substring(0, 20),
+        ];
+      });
+      filename = 'Detalle_FUAs_Registro_vs_Atencion.pdf';
+    } else {
+      titulo = 'B.10. MATRIZ CRUZADA: MES DE DIGITACIÓN VS MES DE PRESTACIÓN';
+      headers = ['Período Registro (Digitado)', 'Total', ...allMesesAtencion.map(m => m.shortLabel)];
+      rows = allPeriodosRegistro.map(p => {
+        const total = matrixData.rowTotals[p.key] || 0;
+        const monthCols = allMesesAtencion.map(m => matrixData.matrix[p.key]?.[m.key] || 0);
+        return [p.label, total, ...monthCols];
+      });
+      filename = 'Matriz_Cruce_Registro_vs_Atencion.pdf';
+    }
+
+    PdfService.generateEstadisticaPdf({
+      titulo,
+      subtitulo: `Punto: ${selectedPunto} | Período: ${selectedPeriodoRegistro} | Mes Atención: ${selectedMesAtencion}`,
+      headers,
+      rows,
+      resumenKpis: [
+        { label: 'Total FUAs', valor: puntoFilteredAtenciones.length },
+        { label: 'Períodos Registro', valor: allPeriodosRegistro.length },
+        { label: 'Punto Filtro', valor: selectedPunto },
+        { label: 'Pestaña', valor: activeTab.toUpperCase() },
+      ],
+      orientation: 'landscape',
+      filename,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -478,14 +551,22 @@ export const AtencionesRegistroVsAtencion: React.FC<Props> = ({
             </span>
             <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 text-cyan-800 text-xs font-bold border border-cyan-200">
               <Layers className="w-3.5 h-3.5 text-cyan-600" />
-              <span>{allPeriodosRegistro.length} Períodos de Registro</span>
+              <span>{allPeriodosRegistro.length} Períodos</span>
             </span>
             <button
               onClick={activeTab === 'detalle' ? handleExportDetailCSV : handleExportMatrixCSV}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Exportar CSV</span>
+              <span>CSV</span>
+            </button>
+            <button
+              onClick={handleExportPdf}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              title="Exportar análisis en formato PDF"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
             </button>
           </div>
         </div>
