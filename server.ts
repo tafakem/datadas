@@ -15,6 +15,7 @@ import {
   deleteDigitadorById,
   generateBenchmarkRecords,
   persistDatabase,
+  clearAtencionesData,
 } from './src/server/db';
 
 const PORT = 3000;
@@ -49,6 +50,16 @@ async function startServer() {
         memoryRssMB: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
         timestamp: new Date().toISOString(),
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Clear demo atenciones while keeping users, digitadores & logs intact
+  app.post('/api/admin/clear-demo-data', (req: Request, res: Response) => {
+    try {
+      const result = clearAtencionesData();
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -203,7 +214,12 @@ async function startServer() {
 
   if (!isProduction) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        watch: {
+          ignored: ['**/data/**', '**/*.sqlite*'],
+        },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

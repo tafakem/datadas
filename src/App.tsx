@@ -83,10 +83,10 @@ export default function App() {
   };
 
   const handleResetData = () => {
-    if (window.confirm('¿Desea restaurar la base de datos a los datos de prueba iniciales oficiales?')) {
-      storageService.resetToDefaultData();
+    if (window.confirm('¿Desea eliminar los datos de demostración? Esta opción limpiará los registros de atenciones conservando intactas las cuentas de usuario.')) {
+      storageService.clearDemoDataPreserveUsers();
       reloadData();
-      showToast('Base de datos restaurada a valores iniciales.', 'success');
+      showToast('Datos de demostración eliminados. La tabla de usuarios permanece intacta.', 'success');
     }
   };
 

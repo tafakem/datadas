@@ -294,7 +294,7 @@ const generateMockAtenciones = (): Atencion[] => {
   return atenciones;
 };
 
-export const INITIAL_ATENCIONES: Atencion[] = generateMockAtenciones();
+export const INITIAL_ATENCIONES: Atencion[] = [];
 
 export const INITIAL_DISTRICTS: DistrictCoverage[] = [
   { id: 'DIST-01', nombre: 'San Martín de Porres', disa: 'DIRIS LIMA NORTE', meta: 2200, realizado: 1495, porcentaje: 67.95, categoria: 'REVISA', eessCount: 14, profesionalesCount: 88 },

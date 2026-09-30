@@ -160,6 +160,14 @@ class ApiService {
     return res.ok;
   }
 
+  async clearDemoData(): Promise<{ cleared: boolean; totalBefore: number }> {
+    this.cacheStats.clear();
+    this.cacheOptions = null;
+    const res = await fetch('/api/admin/clear-demo-data', { method: 'POST' });
+    if (!res.ok) throw new Error('Error al limpiar datos de demostración');
+    return res.json();
+  }
+
   async getDigitadores(): Promise<DigitadorRecord[]> {
     const res = await fetch('/api/digitadores');
     if (!res.ok) throw new Error('Error al obtener digitadores');

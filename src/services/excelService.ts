@@ -183,51 +183,55 @@ export class ExcelService {
   }
 
   /**
-   * Fast detection of total rows in an Excel file without loading all contents into RAM
+   * Fast single-pass summary detection (total rows, sheet names, period) without high memory allocation
    */
-  static async detectExcelDimensions(file: File): Promise<{ totalRows: number; sheetNames: string[] }> {
-    const buffer = await file.arrayBuffer();
-    // read with dense: true to avoid huge sparse object allocations
-    const workbook = XLSX.read(buffer, { type: 'array', dense: true });
-    const sheetNames = workbook.SheetNames;
-    if (sheetNames.length === 0) return { totalRows: 0, sheetNames: [] };
-
-    const firstSheet = workbook.Sheets[sheetNames[0]];
-    const ref = firstSheet['!ref'] || 'A1';
-    const range = XLSX.utils.decode_range(ref);
-    const totalRows = Math.max(0, range.e.r - range.s.r);
-
-    return { totalRows, sheetNames };
-  }
-
-  /**
-   * Detects the closing period (e.g., 2026-09) from the first sample rows of an Excel file
-   */
-  static async detectFilePeriod(file: File): Promise<string | null> {
+  static async detectExcelSummary(file: File): Promise<{ totalRows: number; detectedPeriod: string | null; sheetNames: string[] }> {
     try {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', dense: true, sheetRows: 25 });
-      const firstSheetName = workbook.SheetNames[0];
-      if (!firstSheetName) return null;
-      const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
-      for (const row of rows) {
+      const workbook = XLSX.read(buffer, {
+        type: 'array',
+        dense: true,
+        cellStyles: false,
+        cellHTML: false,
+        cellFormula: false,
+        cellNF: false,
+      });
+      const sheetNames = workbook.SheetNames;
+      if (sheetNames.length === 0) return { totalRows: 0, detectedPeriod: null, sheetNames: [] };
+
+      const firstSheet = workbook.Sheets[sheetNames[0]];
+      const ref = firstSheet['!ref'] || 'A1';
+      const range = XLSX.utils.decode_range(ref);
+      const totalRows = Math.max(0, range.e.r - range.s.r);
+
+      // Detect period from top sample rows
+      let detectedPeriod: string | null = null;
+      const sampleRows = XLSX.utils.sheet_to_json(firstSheet, {
+        range: { s: { r: range.s.r, c: range.s.c }, e: { r: Math.min(range.e.r, range.s.r + 30), c: range.e.c } },
+        defval: '',
+      }) as Record<string, unknown>[];
+
+      for (const row of sampleRows) {
         const periodVal = ExcelService.getRowVal(row, ['periodo_cierre', 'periodo']);
         if (periodVal && periodVal.match(/^\d{4}-\d{2}$/)) {
-          return periodVal;
+          detectedPeriod = periodVal;
+          break;
         }
         const fechaVal = ExcelService.getRowVal(row, ['fecha_atencion', 'fecha', 'fec_atencion']);
         if (fechaVal && fechaVal.length >= 7) {
           const extracted = fechaVal.substring(0, 7);
           if (extracted.match(/^\d{4}-\d{2}$/)) {
-            return extracted;
+            detectedPeriod = extracted;
+            break;
           }
         }
       }
+
+      return { totalRows, detectedPeriod, sheetNames };
     } catch (e) {
-      console.warn('Could not auto-detect period from Excel file:', e);
+      console.warn('Error detecting Excel summary:', e);
+      return { totalRows: 0, detectedPeriod: null, sheetNames: [] };
     }
-    return null;
   }
 
   /**
@@ -251,8 +255,16 @@ export class ExcelService {
     const startTime = Date.now();
     const buffer = await options.file.arrayBuffer();
 
-    // Use dense sheet representation for 70% memory reduction
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, dense: true });
+    // Use dense sheet representation with light options for minimal V8 heap usage
+    const workbook = XLSX.read(buffer, {
+      type: 'array',
+      cellDates: true,
+      dense: true,
+      cellStyles: false,
+      cellHTML: false,
+      cellFormula: false,
+      cellNF: false,
+    });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {
       throw new Error('El archivo Excel no contiene hojas de cálculo válidas.');

@@ -67,7 +67,7 @@ export const DataUpload: React.FC<Props> = ({
 
   // --- BATCH / CHUNK PROCESSING STATE (> 100k records optimization) ---
   const [batchSize, setBatchSize] = useState<number>(5000);
-  const [autoCleanPeriod, setAutoCleanPeriod] = useState<boolean>(true);
+  const [autoCleanPeriod, setAutoCleanPeriod] = useState<boolean>(false);
   const [detectedPeriod, setDetectedPeriod] = useState<string | null>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(null);
@@ -113,6 +113,9 @@ export const DataUpload: React.FC<Props> = ({
     setDigitadoresList(storageService.getDigitadores());
   };
 
+  // --- CLEAR DEMO DATA MODAL (ADMIN ONLY) ---
+  const [clearDemoModalOpen, setClearDemoModalOpen] = useState(false);
+
   // ----------------------------------------------------
   // ATENCIONES HANDLERS (AUTOMATIC DETECTION & CHUNKING)
   // ----------------------------------------------------
@@ -131,19 +134,17 @@ export const DataUpload: React.FC<Props> = ({
     setParseResultAtenciones(null);
 
     try {
-      // 1. Detect total rows and period without loading everything into memory
-      const dims = await ExcelService.detectExcelDimensions(selected);
-      setDetectedTotalRows(dims.totalRows);
-
-      const filePeriod = await ExcelService.detectFilePeriod(selected);
-      setDetectedPeriod(filePeriod);
-      if (filePeriod) {
-        setDeletePeriod(filePeriod);
+      // Single-pass light detection for total rows and period
+      const summary = await ExcelService.detectExcelSummary(selected);
+      setDetectedTotalRows(summary.totalRows);
+      setDetectedPeriod(summary.detectedPeriod);
+      if (summary.detectedPeriod) {
+        setDeletePeriod(summary.detectedPeriod);
       }
 
-      if (dims.totalRows >= 50000) {
+      if (summary.totalRows >= 50000) {
         onShowToast(
-          `Archivo de gran escala detectado: ${dims.totalRows.toLocaleString()} registros${filePeriod ? ` (Período: ${filePeriod})` : ''}. Carga por lotes lista para ingesta continua.`,
+          `Archivo de gran escala detectado: ${summary.totalRows.toLocaleString()} registros${summary.detectedPeriod ? ` (Período: ${summary.detectedPeriod})` : ''}. Carga por lotes lista para ingesta continua.`,
           'warning'
         );
       } else {
@@ -170,34 +171,6 @@ export const DataUpload: React.FC<Props> = ({
     abortSignalRef.current = { aborted: false };
 
     try {
-      // Automatic period clean before batch streaming if enabled
-      const targetPeriod = detectedPeriod || deletePeriod;
-      if (autoCleanPeriod && targetPeriod) {
-        setBatchProgress({
-          fileName: fileAtenciones.name,
-          totalRecords: detectedTotalRows || 0,
-          processedRecords: 0,
-          pendingRecords: detectedTotalRows || 0,
-          percentage: 0,
-          currentBatch: 0,
-          totalBatches: 1,
-          status: `Limpiando datos del período ${targetPeriod} automáticamente antes de iniciar la ingesta...`,
-          correctRecords: 0,
-          errorRecords: 0,
-          rejectedRecords: 0,
-          errors: [],
-          isCompleted: false,
-          isPaused: false,
-          isError: false,
-          startTime: Date.now(),
-        });
-
-        const deletedCount = storageService.deleteByPeriod(targetPeriod);
-        if (deletedCount > 0) {
-          onShowToast(`Auto-limpieza previa: Se removieron ${deletedCount.toLocaleString()} registros anteriores del período ${targetPeriod}.`, 'warning');
-        }
-      }
-
       const res = await ExcelService.processExcelInBatches({
         file: fileAtenciones,
         batchSize,
@@ -231,6 +204,18 @@ export const DataUpload: React.FC<Props> = ({
       onShowToast(`Error en procesamiento por lotes: ${err.message}`, 'error');
     } finally {
       setIsBatchProcessing(false);
+    }
+  };
+
+  const handleConfirmClearDemoData = async () => {
+    try {
+      const res = await apiService.clearDemoData();
+      storageService.clearDemoDataPreserveUsers();
+      onShowToast(`Se eliminaron ${res.totalBefore.toLocaleString()} registros de demostración. La tabla de usuarios permanece intacta.`, 'success');
+      setClearDemoModalOpen(false);
+      onDataModified();
+    } catch (err: any) {
+      onShowToast(`Error al limpiar datos de demostración: ${err.message}`, 'error');
     }
   };
 
@@ -644,28 +629,6 @@ export const DataUpload: React.FC<Props> = ({
                     </div>
                   </label>
 
-                  <label className="flex items-start space-x-2.5 cursor-pointer pt-2 border-t border-slate-100">
-                    <input
-                      type="checkbox"
-                      checked={autoCleanPeriod}
-                      onChange={e => setAutoCleanPeriod(e.target.checked)}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mt-0.5"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                        <span>Auto-limpiar período del Excel antes de ingresar</span>
-                        {detectedPeriod && (
-                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-mono text-[10px] border border-indigo-200">
-                            {detectedPeriod}
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-[11px] text-slate-400 block leading-tight mt-0.5">
-                        Elimina automáticamente los datos antiguos del período del Excel sin requerir borrado manual previo.
-                      </span>
-                    </div>
-                  </label>
-
                   {/* Configurable Batch Size Selector */}
                   <div className="pt-2 border-t border-slate-100">
                     <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -706,6 +669,7 @@ export const DataUpload: React.FC<Props> = ({
                         ))}
                       </select>
                       <button
+                        type="button"
                         onClick={() => setDeleteModalOpen(true)}
                         disabled={!deletePeriod}
                         className="px-3 py-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
@@ -715,6 +679,27 @@ export const DataUpload: React.FC<Props> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* ADMIN SPECIAL CONTROL: DELETE DEMO DATA PRESERVING USERS */}
+                  {currentUser?.rol === 'Administrador' && (
+                    <div className="pt-3 border-t border-amber-200/80 bg-amber-50/50 p-2.5 rounded-xl space-y-1.5">
+                      <span className="text-[11px] font-extrabold text-amber-900 flex items-center space-x-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Mantenimiento de Datos (Solo Admin)</span>
+                      </span>
+                      <p className="text-[10px] text-amber-700/90 leading-tight">
+                        Elimina todas las atenciones cargadas manteniendo intactas las cuentas de usuario registradas.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setClearDemoModalOpen(true)}
+                        className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-[11px] rounded-lg shadow-sm transition-all cursor-pointer flex items-center justify-center space-x-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Eliminar Datos de Demostración (Conservar Usuarios)</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -722,6 +707,7 @@ export const DataUpload: React.FC<Props> = ({
               {fileAtenciones && !isBatchProcessing && (
                 <div className="pt-3 border-t border-slate-100 space-y-2">
                   <button
+                    type="button"
                     onClick={handleStartBatchProcessing}
                     className="w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
                   >
@@ -731,6 +717,7 @@ export const DataUpload: React.FC<Props> = ({
 
                   {(!detectedTotalRows || detectedTotalRows < 50000) && parseResultAtenciones?.success && (
                     <button
+                      type="button"
                       onClick={() => setConfirmModalOpen(true)}
                       className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
                     >
@@ -1541,16 +1528,52 @@ export const DataUpload: React.FC<Props> = ({
 
             <div className="mt-6 flex justify-end space-x-3">
               <button
+                type="button"
                 onClick={() => setDeleteModalOpen(false)}
                 className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={handleDeleteByPeriod}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow-md cursor-pointer"
               >
                 Sí, Eliminar Registros
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Demo Data (Preserving Users) Modal - Admin Only */}
+      {clearDemoModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3 border border-amber-200">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-extrabold text-slate-900">¿Eliminar datos de demostración?</h3>
+            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+              Esta acción eliminará todas las tramas y atenciones médicas registradas para dejar la base de datos limpia.
+              <strong className="text-emerald-700 block mt-1">✓ La tabla de usuarios y credenciales del sistema se conservará intacta.</strong>
+            </p>
+
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setClearDemoModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearDemoData}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold shadow-md cursor-pointer flex items-center space-x-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Sí, Limpiar Demostración (Conservar Usuarios)</span>
               </button>
             </div>
           </div>

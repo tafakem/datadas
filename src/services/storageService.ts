@@ -68,7 +68,7 @@ class StorageService {
       const data = localStorage.getItem(ATENCIONES_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           this.cacheAtenciones = parsed;
           return this.cacheAtenciones;
         }
@@ -76,7 +76,7 @@ class StorageService {
     } catch (e) {
       console.error('Error reading atenciones from localStorage:', e);
     }
-    this.cacheAtenciones = [...INITIAL_ATENCIONES];
+    this.cacheAtenciones = [];
     this.saveAtenciones(this.cacheAtenciones);
     return this.cacheAtenciones;
   }
@@ -415,10 +415,18 @@ class StorageService {
     return INITIAL_DISTRICTS;
   }
 
+  clearDemoDataPreserveUsers(): void {
+    this.cacheAtenciones = null;
+    this.saveAtenciones([]);
+    apiService.clearDemoData().catch(console.error);
+    this.addAuditLog('ELIMINACION', 'Eliminación masiva de datos de demostración conservando la tabla de usuarios intacta.');
+  }
+
   resetToDefaultData(): void {
     this.cacheAtenciones = null;
     this.cacheDigitadores = null;
-    this.saveAtenciones(INITIAL_ATENCIONES);
+    this.saveAtenciones([]);
+    apiService.clearDemoData().catch(console.error);
     this.saveDigitadores(INITIAL_DIGITADORES);
     this.saveUsers(INITIAL_USERS);
     this.saveAuditLogs(INITIAL_LOGS);

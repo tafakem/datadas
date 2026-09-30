@@ -193,9 +193,21 @@ function createSchema(database: Database.Database): void {
   `);
 }
 
+export function clearAtencionesData(): { cleared: boolean; totalBefore: number } {
+  const database = getDatabase();
+  invalidateCache();
+  const countRow = database.prepare('SELECT count(*) as total FROM atenciones').get() as { total: number };
+  const totalBefore = countRow ? Number(countRow.total) : 0;
+  database.prepare('DELETE FROM atenciones;').run();
+  try {
+    database.prepare("DELETE FROM sqlite_sequence WHERE name='atenciones';").run();
+  } catch {}
+  return { cleared: true, totalBefore };
+}
+
 function seedInitialDataIfEmpty(database: Database.Database): void {
   const atencionesCount = getCount(database, 'atenciones');
-  if (atencionesCount === 0) {
+  if (atencionesCount === 0 && INITIAL_ATENCIONES.length > 0) {
     console.log('Seeding initial atenciones data into SQLite...');
     const insertStmt = database.prepare(`
       INSERT OR IGNORE INTO atenciones (
