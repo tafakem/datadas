@@ -67,6 +67,8 @@ export const DataUpload: React.FC<Props> = ({
 
   // --- BATCH / CHUNK PROCESSING STATE (> 100k records optimization) ---
   const [batchSize, setBatchSize] = useState<number>(5000);
+  const [autoCleanPeriod, setAutoCleanPeriod] = useState<boolean>(true);
+  const [detectedPeriod, setDetectedPeriod] = useState<string | null>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(null);
   const [detectedTotalRows, setDetectedTotalRows] = useState<number | null>(null);
@@ -129,13 +131,19 @@ export const DataUpload: React.FC<Props> = ({
     setParseResultAtenciones(null);
 
     try {
-      // 1. Detect total rows without loading everything into memory
+      // 1. Detect total rows and period without loading everything into memory
       const dims = await ExcelService.detectExcelDimensions(selected);
       setDetectedTotalRows(dims.totalRows);
 
+      const filePeriod = await ExcelService.detectFilePeriod(selected);
+      setDetectedPeriod(filePeriod);
+      if (filePeriod) {
+        setDeletePeriod(filePeriod);
+      }
+
       if (dims.totalRows >= 50000) {
         onShowToast(
-          `Archivo de gran escala detectado: ${dims.totalRows.toLocaleString()} registros. Se recomienda activar la carga por lotes para evitar bloqueos.`,
+          `Archivo de gran escala detectado: ${dims.totalRows.toLocaleString()} registros${filePeriod ? ` (Período: ${filePeriod})` : ''}. Carga por lotes lista para ingesta continua.`,
           'warning'
         );
       } else {
@@ -162,6 +170,34 @@ export const DataUpload: React.FC<Props> = ({
     abortSignalRef.current = { aborted: false };
 
     try {
+      // Automatic period clean before batch streaming if enabled
+      const targetPeriod = detectedPeriod || deletePeriod;
+      if (autoCleanPeriod && targetPeriod) {
+        setBatchProgress({
+          fileName: fileAtenciones.name,
+          totalRecords: detectedTotalRows || 0,
+          processedRecords: 0,
+          pendingRecords: detectedTotalRows || 0,
+          percentage: 0,
+          currentBatch: 0,
+          totalBatches: 1,
+          status: `Limpiando datos del período ${targetPeriod} automáticamente antes de iniciar la ingesta...`,
+          correctRecords: 0,
+          errorRecords: 0,
+          rejectedRecords: 0,
+          errors: [],
+          isCompleted: false,
+          isPaused: false,
+          isError: false,
+          startTime: Date.now(),
+        });
+
+        const deletedCount = storageService.deleteByPeriod(targetPeriod);
+        if (deletedCount > 0) {
+          onShowToast(`Auto-limpieza previa: Se removieron ${deletedCount.toLocaleString()} registros anteriores del período ${targetPeriod}.`, 'warning');
+        }
+      }
+
       const res = await ExcelService.processExcelInBatches({
         file: fileAtenciones,
         batchSize,
@@ -180,12 +216,12 @@ export const DataUpload: React.FC<Props> = ({
 
       if (res.errorRecords > 0) {
         onShowToast(
-          `Carga por lotes finalizada: ${res.correctRecords.toLocaleString()} correctos, ${res.errorRecords.toLocaleString()} con errores. Puede descargar el informe de errores.`,
+          `Carga continua finalizada: ${res.correctRecords.toLocaleString()} correctos, ${res.errorRecords.toLocaleString()} con errores.`,
           'warning'
         );
       } else {
         onShowToast(
-          `¡Carga completada con éxito! ${res.correctRecords.toLocaleString()} registros procesados sin errores.`,
+          `¡Carga continua completada con éxito! ${res.correctRecords.toLocaleString()} registros ingresados sin interrupción.`,
           'success'
         );
       }
@@ -608,6 +644,28 @@ export const DataUpload: React.FC<Props> = ({
                     </div>
                   </label>
 
+                  <label className="flex items-start space-x-2.5 cursor-pointer pt-2 border-t border-slate-100">
+                    <input
+                      type="checkbox"
+                      checked={autoCleanPeriod}
+                      onChange={e => setAutoCleanPeriod(e.target.checked)}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mt-0.5"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                        <span>Auto-limpiar período del Excel antes de ingresar</span>
+                        {detectedPeriod && (
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-mono text-[10px] border border-indigo-200">
+                            {detectedPeriod}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[11px] text-slate-400 block leading-tight mt-0.5">
+                        Elimina automáticamente los datos antiguos del período del Excel sin requerir borrado manual previo.
+                      </span>
+                    </div>
+                  </label>
+
                   {/* Configurable Batch Size Selector */}
                   <div className="pt-2 border-t border-slate-100">
                     <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -631,10 +689,10 @@ export const DataUpload: React.FC<Props> = ({
 
                   <div className="pt-2 border-t border-slate-100">
                     <span className="text-xs font-bold text-slate-700 block mb-1">
-                      Eliminación por Período
+                      Limpieza Manual por Período
                     </span>
                     <p className="text-[11px] text-slate-400 mb-2">
-                      Permite limpiar completamente registros de un mes antes de recargar.
+                      Permite borrar manualmente un mes específico si es necesario.
                     </p>
                     <div className="flex space-x-2">
                       <select
@@ -651,6 +709,7 @@ export const DataUpload: React.FC<Props> = ({
                         onClick={() => setDeleteModalOpen(true)}
                         disabled={!deletePeriod}
                         className="px-3 py-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        title="Eliminar período seleccionado"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -664,10 +723,10 @@ export const DataUpload: React.FC<Props> = ({
                 <div className="pt-3 border-t border-slate-100 space-y-2">
                   <button
                     onClick={handleStartBatchProcessing}
-                    className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    className="w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
                   >
-                    <Zap className="w-4 h-4 text-amber-300" />
-                    <span>Iniciar Carga por Lotes ({detectedTotalRows ? detectedTotalRows.toLocaleString() : 'Automático'})</span>
+                    <Zap className="w-4 h-4 text-amber-300 animate-pulse" />
+                    <span>Iniciar Carga Continua Completa por Lotes ({detectedTotalRows ? `${detectedTotalRows.toLocaleString()} reg.` : 'Automática'})</span>
                   </button>
 
                   {(!detectedTotalRows || detectedTotalRows < 50000) && parseResultAtenciones?.success && (

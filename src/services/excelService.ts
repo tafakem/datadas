@@ -201,6 +201,36 @@ export class ExcelService {
   }
 
   /**
+   * Detects the closing period (e.g., 2026-09) from the first sample rows of an Excel file
+   */
+  static async detectFilePeriod(file: File): Promise<string | null> {
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', dense: true, sheetRows: 25 });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) return null;
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, unknown>[];
+      for (const row of rows) {
+        const periodVal = ExcelService.getRowVal(row, ['periodo_cierre', 'periodo']);
+        if (periodVal && periodVal.match(/^\d{4}-\d{2}$/)) {
+          return periodVal;
+        }
+        const fechaVal = ExcelService.getRowVal(row, ['fecha_atencion', 'fecha', 'fec_atencion']);
+        if (fechaVal && fechaVal.length >= 7) {
+          const extracted = fechaVal.substring(0, 7);
+          if (extracted.match(/^\d{4}-\d{2}$/)) {
+            return extracted;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not auto-detect period from Excel file:', e);
+    }
+    return null;
+  }
+
+  /**
    * Robust chunk/batch processing for large Excel files (100,000 to millions of records)
    * Prevents Out-Of-Memory, browser freezing, and yields execution between chunks.
    */
