@@ -55,10 +55,11 @@ export interface User {
 
 export interface DigitadorRecord {
   id: string;
+  usuario: string; // usuario de digitación (login / usuario MINSA)
   dni: string;
   nombre_completo: string;
-  cod_punto_digitacion: string;
-  punto_digitacion: string;
+  cod_punto_digitacion?: string;
+  punto_digitacion?: string;
   codigo_eess?: string;
   nombre_eess?: string;
   cargo?: string;
@@ -83,6 +84,7 @@ export interface DigitadorEstadisticaMensual {
 
 export interface DigitadorEstadisticaCompleta {
   id: string;
+  usuario: string;
   dni: string;
   nombre_completo: string;
   cod_punto_digitacion: string;
@@ -144,6 +146,9 @@ export type ActiveModule =
   | 'report-general'
   | 'report-productividad'
   | 'report-cobertura'
+  | 'rep-general'
+  | 'rep-productividad'
+  | 'rep-cobertura'
   | 'est-mes-eess'
   | 'est-punto'
   | 'est-digitadores'

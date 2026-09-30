@@ -21,6 +21,7 @@ import {
   Users
 } from 'lucide-react';
 import { Atencion } from '../types/health';
+import { apiService, DashboardStatsResponse } from '../services/apiService';
 
 interface DashboardProps {
   atenciones: Atencion[];
@@ -37,6 +38,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
   const [isWideChart, setIsWideChart] = useState<boolean>(true);
   const [eessChartLimit, setEessChartLimit] = useState<number>(6);
   const [eessMetricMode, setEessMetricMode] = useState<'ambos' | 'atenciones' | 'atendidos'>('ambos');
+  const [serverStats, setServerStats] = useState<DashboardStatsResponse | null>(null);
+
+  // Load server-side aggregated metrics on mount and refresh
+  useEffect(() => {
+    let isMounted = true;
+    apiService.getDashboardStats().then(data => {
+      if (isMounted) setServerStats(data);
+    }).catch(err => {
+      console.warn('Using client stats fallback:', err);
+    });
+    return () => { isMounted = false; };
+  }, [atenciones]);
 
   // Auto-refresh countdown (every 5 minutes as specified)
   useEffect(() => {
@@ -52,20 +65,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
     return () => clearInterval(timer);
   }, [onRefresh]);
 
-  // Derived calculations
-  const totalAcumulado = atenciones.length;
+  // Derived calculations (prefer serverStats for 2M+ scalability)
+  const totalAcumulado = serverStats ? serverStats.kpis.totalAtenciones : atenciones.length;
   
   // Current month (default to latest period available in dataset)
   const availablePeriods = Array.from(new Set(atenciones.map(a => a.periodo_cierre))).filter(Boolean).sort().reverse();
   const currentMonthPeriod = availablePeriods[0] || '2026-09';
 
-  const atencionesDelMes = atenciones.filter(a => a.periodo_cierre === currentMonthPeriod).length;
-  const eessActivas = new Set(atenciones.map(a => a.codigo_eess)).size;
-  const profesionalesActivos = new Set(atenciones.map(a => a.dni_profesional)).size;
+  const atencionesDelMes = useMemo(() => {
+    if (serverStats && serverStats.monthlyData.length > 0) {
+      const last = serverStats.monthlyData[serverStats.monthlyData.length - 1];
+      return last ? last.total : 0;
+    }
+    return atenciones.filter(a => a.periodo_cierre === currentMonthPeriod).length;
+  }, [serverStats, atenciones, currentMonthPeriod]);
+
+  const eessActivas = serverStats ? serverStats.kpis.totalEess : new Set(atenciones.map(a => a.codigo_eess)).size;
+  const profesionalesActivos = serverStats ? serverStats.kpis.totalProfesionales : new Set(atenciones.map(a => a.dni_profesional)).size;
 
   // General Coverage calculation (meta estimate: 300 atenciones per EESS active)
   const metaTotal = Math.max(eessActivas * 250, 100);
-  const porcentajeCobertura = Math.min(Math.round((atenciones.length / metaTotal) * 10000) / 100, 100);
+  const porcentajeCobertura = Math.min(Math.round((totalAcumulado / metaTotal) * 10000) / 100, 100);
 
   // Semáforo de Cobertura
   let semaforoColor = 'bg-rose-500';
@@ -85,8 +105,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
     semaforoBadge = 'bg-orange-100 text-orange-800 border-orange-300';
   }
 
-  // Monthly trend data - High Performance Single Pass Aggregation (Handles 1M+ records)
+  // Monthly trend data - Instant aggregated stats
   const { monthlyDataMap, monthlyTarifasMap, monthKeys, maxMonthVal, maxTarifaVal } = useMemo(() => {
+    if (serverStats && serverStats.monthlyData.length > 0) {
+      const dataMap: Record<string, number> = {};
+      const tarifasMap: Record<string, number> = {};
+      serverStats.monthlyData.forEach(m => {
+        dataMap[m.mes] = m.total;
+        tarifasMap[m.mes] = m.tarifa;
+      });
+      const keys = Object.keys(dataMap).sort();
+      const maxVal = Math.max(...Object.values(dataMap), 1);
+      const maxTarifa = Math.max(...Object.values(tarifasMap), 1);
+      return {
+        monthlyDataMap: dataMap,
+        monthlyTarifasMap: tarifasMap,
+        monthKeys: keys,
+        maxMonthVal: maxVal,
+        maxTarifaVal: maxTarifa,
+      };
+    }
+
     const dataMap: Record<string, number> = {};
     const tarifasMap: Record<string, number> = {};
 
@@ -116,7 +155,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
       maxMonthVal: maxVal,
       maxTarifaVal: maxTarifa,
     };
-  }, [atenciones]);
+  }, [serverStats, atenciones]);
 
   // Service distribution data
   const serviceCountMap: Record<string, number> = {};

@@ -719,6 +719,7 @@ export class PdfService {
    */
   static generateFichaDigitadorPdf(data: {
     digitador: {
+      usuario?: string;
       dni: string;
       nombre: string;
       puntoDigitacion: string;
@@ -825,8 +826,8 @@ export class PdfService {
 
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.text(`DNI: ${data.digitador.dni || 'No registrado'}  |  Cargo: ${data.digitador.cargo || 'Digitador Asistencial'}`, margin + 4, currentY + 11);
+    const usuarioLabel = data.digitador.usuario ? `Usuario: @${data.digitador.usuario}  |  ` : '';
+    doc.text(`${usuarioLabel}DNI: ${data.digitador.dni || 'No registrado'}  |  Cargo: ${data.digitador.cargo || 'Digitador Asistencial'}`, margin + 4, currentY + 11);
     doc.text(`Punto de Digitación: [${data.digitador.codPunto}] ${data.digitador.puntoDigitacion}`, margin + 4, currentY + 16);
     doc.text(`EESS Principal: ${data.digitador.eessPrincipal || 'Asignación Múltiple'}  |  Estado: ${data.digitador.estado || 'ACTIVO'}`, margin + 4, currentY + 21);
 

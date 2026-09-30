@@ -1,5 +1,6 @@
-import { Atencion, User, AuditLog, DistrictCoverage, DigitadorRecord } from '../types/health';
+import { Atencion, User, AuditLog, DistrictCoverage, DigitadorRecord, FilterState } from '../types/health';
 import { INITIAL_ATENCIONES, INITIAL_USERS, INITIAL_LOGS, INITIAL_DISTRICTS, INITIAL_DIGITADORES } from '../data/mockData';
+import { apiService, PagedResponse, DashboardStatsResponse, FilterOptionsResponse } from './apiService';
 
 const ATENCIONES_KEY = 'minsa_estadisticas_atenciones_v2';
 const USERS_KEY = 'minsa_estadisticas_usuarios_v1';
@@ -11,6 +12,53 @@ const DIGITADORES_KEY = 'minsa_estadisticas_digitadores_v1';
 class StorageService {
   private cacheAtenciones: Atencion[] | null = null;
   private cacheDigitadores: DigitadorRecord[] | null = null;
+  private isServerSynced = false;
+
+  constructor() {
+    this.initSync();
+  }
+
+  private async initSync() {
+    try {
+      // Warm up filter options and health from backend
+      const health = await apiService.getHealth().catch(() => null);
+      if (health && health.totalAtenciones > 0) {
+        this.isServerSynced = true;
+      }
+    } catch {
+      // offline or startup
+    }
+  }
+
+  /**
+   * High-performance Server-Side Pagination
+   */
+  async fetchAtencionesPaged(params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    filters?: Partial<FilterState>;
+    sortBy?: string;
+    sortDir?: 'ASC' | 'DESC';
+  }): Promise<PagedResponse<Atencion>> {
+    return apiService.getAtencionesPaged(params);
+  }
+
+  /**
+   * High-performance Server-Side Aggregated Stats for Dashboards
+   */
+  async fetchDashboardStats(filters?: Partial<FilterState>): Promise<DashboardStatsResponse> {
+    return apiService.getDashboardStats(filters);
+  }
+
+  /**
+   * Filter Options for Dropdowns
+   */
+  async fetchFilterOptions(): Promise<FilterOptionsResponse> {
+    return apiService.getFilterOptions();
+  }
+
+  // ===================== SYNCHRONOUS / COMPATIBILITY LAYER =====================
 
   getAtenciones(): Atencion[] {
     if (this.cacheAtenciones && this.cacheAtenciones.length > 0) {
@@ -36,13 +84,21 @@ class StorageService {
   saveAtenciones(atenciones: Atencion[]): void {
     this.cacheAtenciones = atenciones;
     try {
-      localStorage.setItem(ATENCIONES_KEY, JSON.stringify(atenciones));
+      // Safe storage: cap localStorage to 500 rows to prevent QuotaExceededError with millions of rows
+      const safeToStore = atenciones.length > 500 ? atenciones.slice(0, 500) : atenciones;
+      localStorage.setItem(ATENCIONES_KEY, JSON.stringify(safeToStore));
     } catch (e) {
-      console.error('Error saving atenciones:', e);
+      console.warn('LocalStorage quota limit reached, relying on SQLite backend.', e);
     }
   }
 
   addAtenciones(nuevas: Omit<Atencion, 'id'>[], updateExisting: boolean): { added: number; updated: number; skipped: number } {
+    // 1. Send asynchronously to SQLite backend
+    apiService.uploadAtencionesBatch(nuevas, updateExisting, this.getCurrentUser()?.username || 'sistema').catch(err => {
+      console.error('Failed to sync batch to SQLite backend:', err);
+    });
+
+    // 2. Local in-memory working array update
     const actuales = this.getAtenciones();
     let currentMaxId = actuales.reduce((max, a) => Math.max(max, a.id), 0);
     
@@ -88,6 +144,8 @@ class StorageService {
   }
 
   deleteByPeriod(period: string): number {
+    apiService.deleteByPeriod(period).catch(console.error);
+
     const actuales = this.getAtenciones();
     const filtradas = actuales.filter(a => a.periodo_cierre !== period);
     const deletedCount = actuales.length - filtradas.length;
@@ -96,6 +154,8 @@ class StorageService {
   }
 
   deleteAtencion(id: number): boolean {
+    apiService.deleteAtencion(id).catch(console.error);
+
     const actuales = this.getAtenciones();
     const filtradas = actuales.filter(a => a.id !== id);
     if (filtradas.length !== actuales.length) {
@@ -112,13 +172,11 @@ class StorageService {
       actuales[index] = {
         ...updated,
         fecha_actualiza: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        usuario_actualiza: this.getCurrentUser()?.username || 'admin',
+        usuario_actualiza: this.getCurrentUser()?.username || 'sistema',
       };
       this.saveAtenciones(actuales);
     }
   }
-
-  // ===================== MAESTRO DE DIGITADORES =====================
 
   getDigitadores(): DigitadorRecord[] {
     if (this.cacheDigitadores && this.cacheDigitadores.length > 0) {
@@ -134,7 +192,7 @@ class StorageService {
         }
       }
     } catch (e) {
-      console.error('Error reading digitadores:', e);
+      console.error('Error reading digitadores from localStorage:', e);
     }
     this.cacheDigitadores = [...INITIAL_DIGITADORES];
     this.saveDigitadores(this.cacheDigitadores);
@@ -151,6 +209,8 @@ class StorageService {
   }
 
   addOrUpdateDigitadores(nuevos: Omit<DigitadorRecord, 'id'>[]): { added: number; updated: number } {
+    apiService.uploadDigitadoresBatch(nuevos).catch(console.error);
+
     const actuales = this.getDigitadores();
     let added = 0;
     let updated = 0;
@@ -160,8 +220,9 @@ class StorageService {
     const result = [...actuales];
 
     for (const item of nuevos) {
-      // Find by DNI or normalized name
+      const itemUsuario = (item.usuario || '').trim().toLowerCase();
       const existingIdx = result.findIndex(d => 
+        (itemUsuario && d.usuario && d.usuario.trim().toLowerCase() === itemUsuario) ||
         (item.dni && d.dni && d.dni.trim() === item.dni.trim()) ||
         (normalize(d.nombre_completo) === normalize(item.nombre_completo))
       );
@@ -172,6 +233,10 @@ class StorageService {
         result[existingIdx] = {
           ...result[existingIdx],
           ...item,
+          punto_digitacion: item.punto_digitacion || result[existingIdx].punto_digitacion,
+          cod_punto_digitacion: item.cod_punto_digitacion || result[existingIdx].cod_punto_digitacion,
+          codigo_eess: item.codigo_eess || result[existingIdx].codigo_eess,
+          nombre_eess: item.nombre_eess || result[existingIdx].nombre_eess,
           id: result[existingIdx].id,
           fecha_actualizacion: nowStr,
         };
@@ -203,6 +268,7 @@ class StorageService {
     };
     list.push(newRecord);
     this.saveDigitadores(list);
+    apiService.uploadDigitadoresBatch([digitador]).catch(console.error);
     return newRecord;
   }
 
@@ -215,10 +281,12 @@ class StorageService {
         fecha_actualizacion: new Date().toISOString().replace('T', ' ').substring(0, 19),
       };
       this.saveDigitadores(list);
+      apiService.uploadDigitadoresBatch([digitador]).catch(console.error);
     }
   }
 
   deleteDigitador(id: string): boolean {
+    apiService.deleteDigitador(id).catch(console.error);
     const list = this.getDigitadores();
     const filtered = list.filter(d => d.id !== id);
     if (filtered.length !== list.length) {
@@ -331,7 +399,6 @@ class StorageService {
       ip: '192.168.1.100',
     };
     logs.unshift(newLog);
-    // Keep last 200 logs
     this.saveAuditLogs(logs.slice(0, 200));
   }
 
@@ -360,38 +427,40 @@ class StorageService {
 
   exportFullBackup(): string {
     return JSON.stringify({
-      version: '1.1',
+      version: '2.0',
       exported_at: new Date().toISOString(),
       atenciones: this.getAtenciones(),
       digitadores: this.getDigitadores(),
-      usuarios: this.getUsers(),
-      auditoria_logs: this.getAuditLogs(),
-      distritos: this.getDistricts(),
+      users: this.getUsers(),
+      logs: this.getAuditLogs(),
+      districts: this.getDistricts(),
     }, null, 2);
   }
 
-  importFullBackup(jsonContent: string): boolean {
+  restoreBackup(jsonString: string): { success: boolean; message: string } {
     try {
-      const parsed = JSON.parse(jsonContent);
-      if (parsed.atenciones && Array.isArray(parsed.atenciones)) {
-        this.saveAtenciones(parsed.atenciones);
+      const data = JSON.parse(jsonString);
+      if (!data || typeof data !== 'object') {
+        return { success: false, message: 'El archivo no contiene un formato JSON válido.' };
       }
-      if (parsed.digitadores && Array.isArray(parsed.digitadores)) {
-        this.saveDigitadores(parsed.digitadores);
+
+      if (Array.isArray(data.atenciones)) {
+        this.saveAtenciones(data.atenciones);
       }
-      if (parsed.usuarios && Array.isArray(parsed.usuarios)) {
-        this.saveUsers(parsed.usuarios);
+      if (Array.isArray(data.digitadores)) {
+        this.saveDigitadores(data.digitadores);
       }
-      if (parsed.auditoria_logs && Array.isArray(parsed.auditoria_logs)) {
-        this.saveAuditLogs(parsed.auditoria_logs);
+      if (Array.isArray(data.users)) {
+        this.saveUsers(data.users);
       }
-      if (parsed.distritos && Array.isArray(parsed.distritos)) {
-        localStorage.setItem(DISTRICTS_KEY, JSON.stringify(parsed.distritos));
+      if (Array.isArray(data.districts)) {
+        localStorage.setItem(DISTRICTS_KEY, JSON.stringify(data.districts));
       }
-      return true;
-    } catch (e) {
-      console.error('Import failed:', e);
-      return false;
+
+      this.addAuditLog('ACTUALIZACION', 'Restauración completa del sistema desde copia de seguridad JSON');
+      return { success: true, message: 'Copia de seguridad restaurada correctamente.' };
+    } catch (err: unknown) {
+      return { success: false, message: `Error al restaurar: ${(err as Error).message}` };
     }
   }
 }

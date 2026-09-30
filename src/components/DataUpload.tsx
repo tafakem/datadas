@@ -20,11 +20,21 @@ import {
   Check,
   Building2,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Zap,
+  Flame,
+  FileDown,
+  Layers,
+  BarChart3,
+  Database,
+  Play,
+  Pause,
+  AlertOctagon
 } from 'lucide-react';
 import { Atencion, User, DigitadorRecord } from '../types/health';
-import { ExcelService, ParseExcelResult, ParseDigitadoresResult } from '../services/excelService';
+import { ExcelService, ParseExcelResult, ParseDigitadoresResult, BatchProgressState } from '../services/excelService';
 import { storageService } from '../services/storageService';
+import { apiService } from '../services/apiService';
 
 interface Props {
   currentUser: User | null;
@@ -43,7 +53,7 @@ export const DataUpload: React.FC<Props> = ({
   onShowToast,
   onNavigateToDigitadores,
 }) => {
-  const [activeUploadTab, setActiveUploadTab] = useState<'atenciones' | 'digitadores' | 'directorio'>('atenciones');
+  const [activeUploadTab, setActiveUploadTab] = useState<'atenciones' | 'digitadores' | 'directorio' | 'simulador'>('atenciones');
 
   // --- ATENCIONES STATE ---
   const [fileAtenciones, setFileAtenciones] = useState<File | null>(null);
@@ -54,6 +64,19 @@ export const DataUpload: React.FC<Props> = ({
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const fileInputRefAtenciones = useRef<HTMLInputElement>(null);
+
+  // --- BATCH / CHUNK PROCESSING STATE (> 100k records optimization) ---
+  const [batchSize, setBatchSize] = useState<number>(5000);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<BatchProgressState | null>(null);
+  const [detectedTotalRows, setDetectedTotalRows] = useState<number | null>(null);
+  const abortSignalRef = useRef<{ aborted: boolean }>({ aborted: false });
+
+  // --- STRESS BENCHMARK STATE (100k - 2M+ records) ---
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [benchmarkCount, setBenchmarkCount] = useState<number>(100000);
+  const [benchmarkResult, setBenchmarkResult] = useState<{ generated: number; totalNow: number; elapsedMs: number } | null>(null);
+  const [serverHealth, setServerHealth] = useState<{ totalAtenciones: number; engine: string } | null>(null);
 
   // --- DIGITADORES STATE ---
   const [fileDigitadores, setFileDigitadores] = useState<File | null>(null);
@@ -70,6 +93,7 @@ export const DataUpload: React.FC<Props> = ({
   const [deleteDigitadorId, setDeleteDigitadorId] = useState<string | null>(null);
 
   // Form state for add/edit digitador
+  const [formUsuario, setFormUsuario] = useState('');
   const [formDni, setFormDni] = useState('');
   const [formNombre, setFormNombre] = useState('');
   const [formCodPunto, setFormCodPunto] = useState('PTO-DIG-01');
@@ -88,7 +112,7 @@ export const DataUpload: React.FC<Props> = ({
   };
 
   // ----------------------------------------------------
-  // ATENCIONES HANDLERS
+  // ATENCIONES HANDLERS (AUTOMATIC DETECTION & CHUNKING)
   // ----------------------------------------------------
   const handleFileAtencionesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -101,20 +125,105 @@ export const DataUpload: React.FC<Props> = ({
 
     setFileAtenciones(selected);
     setLoadingAtenciones(true);
+    setBatchProgress(null);
+    setParseResultAtenciones(null);
 
     try {
-      const buffer = await selected.arrayBuffer();
-      const result = ExcelService.parseExcelFile(buffer, atenciones);
-      setParseResultAtenciones(result);
-      if (result.success) {
-        onShowToast(`Archivo analizado: ${result.data.length} atenciones válidas encontradas.`, 'success');
+      // 1. Detect total rows without loading everything into memory
+      const dims = await ExcelService.detectExcelDimensions(selected);
+      setDetectedTotalRows(dims.totalRows);
+
+      if (dims.totalRows >= 50000) {
+        onShowToast(
+          `Archivo de gran escala detectado: ${dims.totalRows.toLocaleString()} registros. Se recomienda activar la carga por lotes para evitar bloqueos.`,
+          'warning'
+        );
       } else {
-        onShowToast('Errores encontrados al validar el archivo Excel de atenciones.', 'error');
+        // Small file: standard preview parsing
+        const buffer = await selected.arrayBuffer();
+        const result = ExcelService.parseExcelFile(buffer, atenciones);
+        setParseResultAtenciones(result);
+        if (result.success) {
+          onShowToast(`Archivo analizado: ${result.data.length} atenciones listas para procesar.`, 'success');
+        } else {
+          onShowToast('Se detectaron observaciones en el archivo.', 'error');
+        }
       }
     } catch (err: unknown) {
       onShowToast(`Error de lectura: ${(err as Error).message}`, 'error');
     } finally {
       setLoadingAtenciones(false);
+    }
+  };
+
+  const handleStartBatchProcessing = async () => {
+    if (!fileAtenciones) return;
+    setIsBatchProcessing(true);
+    abortSignalRef.current = { aborted: false };
+
+    try {
+      const res = await ExcelService.processExcelInBatches({
+        file: fileAtenciones,
+        batchSize,
+        updateExisting: updateExistingAtenciones,
+        currentUser: currentUser?.username || 'sistema',
+        abortSignal: abortSignalRef.current,
+        onProgress: (state) => {
+          setBatchProgress({ ...state });
+        },
+      });
+
+      storageService.addAuditLog(
+        'CARGA_EXCEL',
+        `Carga por lotes de ${res.totalProcessed.toLocaleString()} registros (${res.correctRecords.toLocaleString()} correctos, ${res.errorRecords.toLocaleString()} errores) desde ${fileAtenciones.name}`
+      );
+
+      if (res.errorRecords > 0) {
+        onShowToast(
+          `Carga por lotes finalizada: ${res.correctRecords.toLocaleString()} correctos, ${res.errorRecords.toLocaleString()} con errores. Puede descargar el informe de errores.`,
+          'warning'
+        );
+      } else {
+        onShowToast(
+          `¡Carga completada con éxito! ${res.correctRecords.toLocaleString()} registros procesados sin errores.`,
+          'success'
+        );
+      }
+
+      onDataModified();
+    } catch (err: any) {
+      onShowToast(`Error en procesamiento por lotes: ${err.message}`, 'error');
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
+  const handleCancelBatchProcessing = () => {
+    abortSignalRef.current = { aborted: true };
+    onShowToast('Cancelación solicitada. El lote actual finalizará de forma segura.', 'warning');
+  };
+
+  const handleDownloadErrorReport = () => {
+    if (!batchProgress || !batchProgress.errors || batchProgress.errors.length === 0) {
+      onShowToast('No hay errores registrados para descargar.', 'warning');
+      return;
+    }
+    ExcelService.exportErrorsToCsv(batchProgress.errors, fileAtenciones?.name || 'Carga_Excel');
+    onShowToast('Informe de errores descargado en formato CSV.', 'success');
+  };
+
+  const handleRunBenchmark = async () => {
+    setBenchmarkLoading(true);
+    setBenchmarkResult(null);
+    try {
+      const result = await apiService.generateBenchmark(benchmarkCount);
+      setBenchmarkResult(result);
+      onShowToast(`¡Simulación completada! Se insertaron ${result.generated.toLocaleString()} registros en ${result.elapsedMs.toLocaleString()} ms.`, 'success');
+      onDataModified();
+    } catch (err: any) {
+      onShowToast(`Error en simulación de estrés: ${err.message}`, 'error');
+    } finally {
+      setBenchmarkLoading(false);
     }
   };
 
@@ -125,7 +234,7 @@ export const DataUpload: React.FC<Props> = ({
       const { added, updated, skipped } = storageService.addAtenciones(parseResultAtenciones.data, updateExistingAtenciones);
       storageService.addAuditLog(
         'CARGA_EXCEL',
-        `Carga de ${parseResultAtenciones.data.length} atenciones (Nuevos: ${added}, Actualizados: ${updated}, Omitidos: ${skipped}) desde ${fileAtenciones?.name}`
+        `Carga directa de ${parseResultAtenciones.data.length} atenciones (Nuevos: ${added}, Actualizados: ${updated}, Omitidos: ${skipped}) desde ${fileAtenciones?.name}`
       );
       onShowToast(`Carga de atenciones exitosa: ${added} agregados, ${updated} actualizados, ${skipped} omitidos.`, 'success');
       setFileAtenciones(null);
@@ -207,6 +316,7 @@ export const DataUpload: React.FC<Props> = ({
   // MANUAL DIGITADOR FORM HANDLERS
   // ----------------------------------------------------
   const handleOpenNewDigitadorModal = () => {
+    setFormUsuario('');
     setFormDni('');
     setFormNombre('');
     setFormCodPunto('PTO-DIG-01');
@@ -223,6 +333,7 @@ export const DataUpload: React.FC<Props> = ({
 
   const handleOpenEditDigitador = (dig: DigitadorRecord) => {
     setEditingDigitador(dig);
+    setFormUsuario(dig.usuario || '');
     setFormDni(dig.dni || '');
     setFormNombre(dig.nombre_completo);
     setFormCodPunto(dig.cod_punto_digitacion || 'PTO-DIG-01');
@@ -243,9 +354,12 @@ export const DataUpload: React.FC<Props> = ({
       return;
     }
 
+    const calculatedUser = formUsuario.trim() || formNombre.trim().toLowerCase().replace(/^(lic\.|tec\.|bach\.|dr\.|dra\.|ing\.|mg\.)\s*/i, '').replace(/[^a-z0-9]/g, '');
+
     if (editingDigitador) {
       storageService.updateDigitador({
         ...editingDigitador,
+        usuario: calculatedUser,
         dni: formDni.trim(),
         nombre_completo: formNombre.trim(),
         cod_punto_digitacion: formCodPunto.trim(),
@@ -262,6 +376,7 @@ export const DataUpload: React.FC<Props> = ({
       setEditingDigitador(null);
     } else {
       storageService.addDigitador({
+        usuario: calculatedUser,
         dni: formDni.trim(),
         nombre_completo: formNombre.trim(),
         cod_punto_digitacion: formCodPunto.trim(),
@@ -299,8 +414,9 @@ export const DataUpload: React.FC<Props> = ({
     const term = dirSearchTerm.toLowerCase();
     return digitadoresList.filter(d => 
       d.nombre_completo.toLowerCase().includes(term) ||
+      (d.usuario || '').toLowerCase().includes(term) ||
       d.dni.toLowerCase().includes(term) ||
-      d.punto_digitacion.toLowerCase().includes(term) ||
+      (d.punto_digitacion || '').toLowerCase().includes(term) ||
       (d.nombre_eess || '').toLowerCase().includes(term)
     );
   }, [digitadoresList, dirSearchTerm]);
@@ -382,6 +498,21 @@ export const DataUpload: React.FC<Props> = ({
             <Building2 className="w-3.5 h-3.5" />
             <span>3. Directorio de Digitadores ({digitadoresList.length})</span>
           </button>
+
+          <button
+            onClick={() => {
+              setActiveUploadTab('simulador');
+              apiService.getHealth().then(setServerHealth).catch(() => {});
+            }}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+              activeUploadTab === 'simulador'
+                ? 'bg-white text-purple-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5 text-purple-600" />
+            <span>4. Simulador 2M+ Registros</span>
+          </button>
         </div>
       </div>
 
@@ -458,7 +589,7 @@ export const DataUpload: React.FC<Props> = ({
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">
-                  Opciones de Ingesta
+                  Opciones de Ingesta & Lotes
                 </h3>
 
                 <div className="space-y-3">
@@ -472,12 +603,33 @@ export const DataUpload: React.FC<Props> = ({
                     <div>
                       <span className="text-xs font-bold text-slate-800 block">Actualizar existentes (Upsert)</span>
                       <span className="text-[11px] text-slate-400 block leading-tight">
-                        Si el N° de formato ya existe, sobreescribir datos y registrar timestamp de actualización.
+                        Si el N° de formato ya existe, sobreescribir datos en SQLite mediante ON CONFLICT.
                       </span>
                     </div>
                   </label>
 
-                  <div className="pt-3 border-t border-slate-100">
+                  {/* Configurable Batch Size Selector */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Tamaño de Lote (Chunk Size)
+                    </label>
+                    <select
+                      value={batchSize}
+                      onChange={e => setBatchSize(Number(e.target.value))}
+                      disabled={isBatchProcessing}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500"
+                    >
+                      <option value={2500}>2,500 registros por lote (Mínima memoria)</option>
+                      <option value={5000}>5,000 registros por lote (Recomendado)</option>
+                      <option value={10000}>10,000 registros por lote (Rápido)</option>
+                      <option value={20000}>20,000 registros por lote (Ultra-rápido)</option>
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Divide el archivo en bloques optimizados, liberando memoria RAM tras cada lote.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100">
                     <span className="text-xs font-bold text-slate-700 block mb-1">
                       Eliminación por Período
                     </span>
@@ -507,26 +659,150 @@ export const DataUpload: React.FC<Props> = ({
                 </div>
               </div>
 
-              {parseResultAtenciones && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-slate-600">Estado:</span>
-                    <span className={`font-bold font-mono ${parseResultAtenciones.success ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {parseResultAtenciones.success ? '✓ VÁLIDO' : '✗ ERRORES'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-slate-600">Total Filas:</span>
-                    <span className="font-mono font-bold text-slate-800">{parseResultAtenciones.totalRows}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-slate-600">Duplicados:</span>
-                    <span className="font-mono font-bold text-amber-600">{parseResultAtenciones.duplicateCount}</span>
-                  </div>
+              {/* Action Buttons for file */}
+              {fileAtenciones && !isBatchProcessing && (
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <button
+                    onClick={handleStartBatchProcessing}
+                    className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  >
+                    <Zap className="w-4 h-4 text-amber-300" />
+                    <span>Iniciar Carga por Lotes ({detectedTotalRows ? detectedTotalRows.toLocaleString() : 'Automático'})</span>
+                  </button>
+
+                  {(!detectedTotalRows || detectedTotalRows < 50000) && parseResultAtenciones?.success && (
+                    <button
+                      onClick={() => setConfirmModalOpen(true)}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Carga Directa Rápida ({parseResultAtenciones.data.length})</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           </div>
+
+          {/* REAL-TIME BATCH PROGRESS CARD (Requirement 4 & 5) */}
+          {(isBatchProcessing || batchProgress) && (
+            <div className="bg-white rounded-2xl border border-blue-200 shadow-md p-6 space-y-4 animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${isBatchProcessing ? 'bg-blue-600 animate-ping' : (batchProgress?.isError ? 'bg-rose-500' : 'bg-emerald-500')}`} />
+                    <h3 className="text-sm font-extrabold text-slate-900">
+                      Procesando Archivo: <span className="font-mono text-blue-600">{batchProgress?.fileName || fileAtenciones?.name}</span>
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {batchProgress?.status || 'Procesando bloques en SQLite con transacciones seguras...'}
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  {batchProgress && batchProgress.errors.length > 0 && (
+                    <button
+                      onClick={handleDownloadErrorReport}
+                      className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+                    >
+                      <FileDown className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Descargar Informe de Errores ({batchProgress.errors.length})</span>
+                    </button>
+                  )}
+
+                  {isBatchProcessing && (
+                    <button
+                      onClick={handleCancelBatchProcessing}
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Detener Carga</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center text-xs font-bold">
+                  <span className="text-slate-700 flex items-center space-x-1.5">
+                    <Layers className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Lote {batchProgress?.currentBatch} de {batchProgress?.totalBatches}</span>
+                  </span>
+                  <span className="font-mono text-blue-600 text-sm">{batchProgress?.percentage || 0}%</span>
+                </div>
+
+                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500 transition-all duration-300 rounded-full"
+                    style={{ width: `${batchProgress?.percentage || 0}%` }}
+                  />
+                </div>
+
+                {batchProgress?.estimatedRemainingSec !== undefined && batchProgress.estimatedRemainingSec > 0 && (
+                  <p className="text-[11px] text-slate-400 text-right">
+                    Tiempo estimado restante: ~{batchProgress.estimatedRemainingSec} segundos
+                  </p>
+                )}
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-slate-500 block text-[11px]">Total Registros</span>
+                  <strong className="text-base font-extrabold text-slate-900 font-mono">
+                    {batchProgress?.totalRecords.toLocaleString()}
+                  </strong>
+                </div>
+
+                <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200">
+                  <span className="text-blue-700 block text-[11px]">Procesados</span>
+                  <strong className="text-base font-extrabold text-blue-900 font-mono">
+                    {batchProgress?.processedRecords.toLocaleString()}
+                  </strong>
+                  <span className="text-[10px] text-blue-500 block">
+                    Pendientes: {batchProgress?.pendingRecords.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
+                  <span className="text-emerald-700 block text-[11px]">Correctos (Upsert)</span>
+                  <strong className="text-base font-extrabold text-emerald-800 font-mono">
+                    {batchProgress?.correctRecords.toLocaleString()}
+                  </strong>
+                </div>
+
+                <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200">
+                  <span className="text-rose-700 block text-[11px]">Con Errores / Omitidos</span>
+                  <strong className="text-base font-extrabold text-rose-800 font-mono">
+                    {batchProgress?.errorRecords.toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Error log table if errors occur */}
+              {batchProgress && batchProgress.errors.length > 0 && (
+                <div className="mt-3 border border-rose-200 rounded-xl overflow-hidden bg-rose-50/40">
+                  <div className="p-2.5 bg-rose-100/60 border-b border-rose-200 flex items-center justify-between text-xs text-rose-900 font-bold">
+                    <span className="flex items-center space-x-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Registros Observados ({batchProgress.errors.length} en total)</span>
+                    </span>
+                    <span className="text-[11px] font-normal text-rose-700">Mostrando últimos incidentes</span>
+                  </div>
+                  <div className="max-h-36 overflow-y-auto divide-y divide-rose-100 text-xs font-mono">
+                    {batchProgress.errors.slice(-20).map((err, i) => (
+                      <div key={i} className="p-2 flex items-center justify-between text-slate-700 hover:bg-rose-100/30">
+                        <span className="font-bold text-rose-700">Fila {err.row} [{err.format}]</span>
+                        <span className="text-slate-600 truncate max-w-md">{err.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Errors Banner */}
           {parseResultAtenciones && parseResultAtenciones.errors.length > 0 && (
@@ -613,7 +889,7 @@ export const DataUpload: React.FC<Props> = ({
               </div>
               <h3 className="text-base font-extrabold text-white">Importar Catálogo / Padrón de Digitadores</h3>
               <p className="text-xs text-slate-300 max-w-xl">
-                Cargue la tabla de digitadores con DNI, nombre completo, punto de digitación, establecimiento y datos de contacto para entrelazar con las atenciones.
+                Cargue la tabla de digitadores con las columnas: <strong className="text-emerald-300">usuario</strong>, <strong className="text-emerald-300">dni</strong> y <strong className="text-emerald-300">nombres completos</strong> para entrelazar con las atenciones de cada punto.
               </p>
             </div>
 
@@ -623,7 +899,7 @@ export const DataUpload: React.FC<Props> = ({
                 className="px-4 py-2 rounded-xl bg-white text-slate-900 hover:bg-emerald-50 font-bold text-xs flex items-center space-x-1.5 shadow-md transition-colors cursor-pointer"
               >
                 <Download className="w-4 h-4 text-emerald-600" />
-                <span>Descargar Plantilla Digitadores (.xlsx)</span>
+                <span>Descargar Plantilla (Usuario, DNI, Nombres) (.xlsx)</span>
               </button>
 
               {onNavigateToDigitadores && (
@@ -662,7 +938,7 @@ export const DataUpload: React.FC<Props> = ({
               </label>
 
               <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                Columnas requeridas: <strong>nombre_completo</strong> (o digitador), <strong>punto_digitacion</strong>, <strong>dni</strong>, <strong>cargo</strong>, <strong>estado</strong>.
+                Columnas admitidas: <strong>usuario</strong>, <strong>dni</strong>, <strong>nombre_completo</strong> (o nombres completos). Los puntos de digitación se entrelazan de forma automática con la base de atenciones.
               </p>
 
               <div className="mt-4 flex items-center space-x-3">
@@ -772,35 +1048,37 @@ export const DataUpload: React.FC<Props> = ({
                   <thead className="bg-slate-900 text-white font-bold uppercase sticky top-0 z-10">
                     <tr>
                       <th className="py-2.5 px-3">#</th>
+                      <th className="py-2.5 px-3">Usuario</th>
                       <th className="py-2.5 px-3">DNI</th>
-                      <th className="py-2.5 px-3">Nombre Completo</th>
+                      <th className="py-2.5 px-3">Nombres Completos</th>
                       <th className="py-2.5 px-3">Punto de Digitación</th>
-                      <th className="py-2.5 px-3">Cód. Punto</th>
-                      <th className="py-2.5 px-3">EESS Principal</th>
-                      <th className="py-2.5 px-3">Cargo</th>
                       <th className="py-2.5 px-3">Estado</th>
-                      <th className="py-2.5 px-3">Contacto</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {parseResultDigitadores.data.map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50">
                         <td className="py-2 px-3 font-mono text-slate-400">{i + 1}</td>
+                        <td className="py-2 px-3">
+                          <span className="font-mono text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-bold border border-slate-200">
+                            @{row.usuario || 's/usuario'}
+                          </span>
+                        </td>
                         <td className="py-2 px-3 font-mono font-bold text-slate-800">{row.dni || 'S/D'}</td>
                         <td className="py-2 px-3 font-bold text-slate-900">{row.nombre_completo}</td>
-                        <td className="py-2 px-3 text-slate-700 font-medium">{row.punto_digitacion}</td>
-                        <td className="py-2 px-3 font-mono text-slate-500">{row.cod_punto_digitacion}</td>
-                        <td className="py-2 px-3 text-slate-600 truncate max-w-[140px]">{row.nombre_eess || '—'}</td>
-                        <td className="py-2 px-3 text-slate-600">{row.cargo || 'Digitador'}</td>
+                        <td className="py-2 px-3 text-slate-700 font-medium">
+                          {row.punto_digitacion || (
+                            <span className="text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold border border-emerald-200">
+                              Auto-vincular por atención
+                            </span>
+                          )}
+                        </td>
                         <td className="py-2 px-3">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             row.estado === 'ACTIVO' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                           }`}>
                             {row.estado}
                           </span>
-                        </td>
-                        <td className="py-2 px-3 text-[11px] text-slate-500 font-mono">
-                          {row.telefono || row.correo || '—'}
                         </td>
                       </tr>
                     ))}
@@ -857,6 +1135,7 @@ export const DataUpload: React.FC<Props> = ({
               <thead className="bg-slate-50 font-bold text-slate-700 text-[11px] uppercase tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3">#</th>
+                  <th className="py-2.5 px-3">Usuario</th>
                   <th className="py-2.5 px-3">DNI</th>
                   <th className="py-2.5 px-3">Nombre del Digitador</th>
                   <th className="py-2.5 px-3">Punto de Digitación</th>
@@ -870,7 +1149,7 @@ export const DataUpload: React.FC<Props> = ({
               <tbody className="divide-y divide-slate-100">
                 {filteredDirectory.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-10 text-slate-400">
+                    <td colSpan={10} className="text-center py-10 text-slate-400">
                       No se encontraron digitadores en el padrón.
                     </td>
                   </tr>
@@ -878,6 +1157,11 @@ export const DataUpload: React.FC<Props> = ({
                   filteredDirectory.map((dig, idx) => (
                     <tr key={dig.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-2.5 px-3 font-mono text-slate-400">{idx + 1}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="font-mono text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-bold border border-slate-200">
+                          @{dig.usuario || 's/usuario'}
+                        </span>
+                      </td>
                       <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{dig.dni || 'S/D'}</td>
                       <td className="py-2.5 px-3">
                         <div className="font-bold text-slate-900">{dig.nombre_completo}</div>
@@ -1015,7 +1299,17 @@ export const DataUpload: React.FC<Props> = ({
             </div>
 
             <form onSubmit={handleSaveDigitadorForm} className="space-y-3.5 mt-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Usuario (Login) *</label>
+                  <input
+                    type="text"
+                    value={formUsuario}
+                    onChange={e => setFormUsuario(e.target.value)}
+                    placeholder="Ej. pvega"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">DNI del Digitador</label>
                   <input

@@ -30,6 +30,7 @@ import { AtencionesTipoAtencion } from './components/Statistics/AtencionesTipoAt
 import { AtencionesDisa } from './components/Statistics/AtencionesDisa';
 import { AtencionesOportunidad } from './components/Statistics/AtencionesOportunidad';
 import { AtencionesRegistroVsAtencion } from './components/Statistics/AtencionesRegistroVsAtencion';
+import { AtencionesDigitadores } from './components/Statistics/AtencionesDigitadores';
 
 import { ReporteGeneral } from './components/Reports/ReporteGeneral';
 import { ReporteProductividad } from './components/Reports/ReporteProductividad';
@@ -227,6 +228,18 @@ export default function App() {
             initialPunto={filters.puntoDigitacion}
             onNavigateToOportunidad={() => setCurrentModule('stats-oportunidad')}
             onNavigateToRegistroVsAtencion={() => setCurrentModule('stats-registro-atencion')}
+            onNavigateToDigitadores={() => setCurrentModule('stats-digitadores')}
+          />
+        )}
+
+        {(currentModule === 'stats-digitadores' || currentModule === 'est-digitadores') && (
+          <AtencionesDigitadores
+            atenciones={filteredAtenciones}
+            onNavigateToUpload={() => setCurrentModule('carga-datos')}
+            onNavigateToPunto={(punto) => {
+              setFilters(f => ({ ...f, puntoDigitacion: punto }));
+              setCurrentModule('stats-punto-dig');
+            }}
           />
         )}
 
@@ -298,6 +311,7 @@ export default function App() {
             atenciones={atenciones}
             onDataModified={reloadData}
             onShowToast={showToast}
+            onNavigateToDigitadores={() => setCurrentModule('stats-digitadores')}
           />
         )}
 

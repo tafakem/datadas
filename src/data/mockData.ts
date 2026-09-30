@@ -63,6 +63,7 @@ export const INITIAL_LOGS: AuditLog[] = [
 export const INITIAL_DIGITADORES: DigitadorRecord[] = [
   {
     id: 'dig-1',
+    usuario: 'pvega',
     dni: '45892134',
     nombre_completo: 'Lic. Patricia Vega Salas',
     cod_punto_digitacion: 'PTO-DIG-01',
@@ -77,6 +78,7 @@ export const INITIAL_DIGITADORES: DigitadorRecord[] = [
   },
   {
     id: 'dig-2',
+    usuario: 'jquispe',
     dni: '41852963',
     nombre_completo: 'Tec. Julio Quispe Peña',
     cod_punto_digitacion: 'PTO-DIG-01',
@@ -91,6 +93,7 @@ export const INITIAL_DIGITADORES: DigitadorRecord[] = [
   },
   {
     id: 'dig-3',
+    usuario: 'msoto',
     dni: '70258142',
     nombre_completo: 'Tec. Marco Aurelio Soto',
     cod_punto_digitacion: 'PTO-DIG-02',
@@ -105,6 +108,7 @@ export const INITIAL_DIGITADORES: DigitadorRecord[] = [
   },
   {
     id: 'dig-4',
+    usuario: 'avivanco',
     dni: '48963251',
     nombre_completo: 'Bach. Andrea Vivanco',
     cod_punto_digitacion: 'PTO-DIG-03',
@@ -119,6 +123,7 @@ export const INITIAL_DIGITADORES: DigitadorRecord[] = [
   },
   {
     id: 'dig-5',
+    usuario: 'cgutierrez',
     dni: '43215689',
     nombre_completo: 'Ing. Carlos Gutierrez Miranda',
     cod_punto_digitacion: 'PTO-DIG-04',
@@ -133,6 +138,7 @@ export const INITIAL_DIGITADORES: DigitadorRecord[] = [
   },
   {
     id: 'dig-6',
+    usuario: 'lrojas',
     dni: '72145896',
     nombre_completo: 'Lic. Lorena Rojas Ramos',
     cod_punto_digitacion: 'PTO-DIG-05',

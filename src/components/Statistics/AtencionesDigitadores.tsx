@@ -116,6 +116,7 @@ export const AtencionesDigitadores: React.FC<Props> = ({
     // Collect all unique digitador representations
     const digitadorMap = new Map<string, {
       record?: DigitadorRecord;
+      usuario: string;
       nombre: string;
       dni: string;
       punto: string;
@@ -130,9 +131,10 @@ export const AtencionesDigitadores: React.FC<Props> = ({
 
     // First populate from registered padrón
     digitadoresPadrón.forEach(padron => {
-      const key = normalizeStr(padron.nombre_completo);
+      const key = normalizeStr(padron.nombre_completo) || padron.usuario.toLowerCase();
       digitadorMap.set(key, {
         record: padron,
+        usuario: padron.usuario || '',
         nombre: padron.nombre_completo,
         dni: padron.dni || '',
         punto: padron.punto_digitacion || 'PUNTO NO ESPECIFICADO',
@@ -150,11 +152,43 @@ export const AtencionesDigitadores: React.FC<Props> = ({
     atenciones.forEach(a => {
       const rawName = (a.digitador || 'SIN DIGITADOR').trim();
       const normKey = normalizeStr(rawName);
+      const rawLower = rawName.toLowerCase();
 
-      let entry = digitadorMap.get(normKey);
-      if (!entry) {
+      // Find matching entry by normalized full name, by username, or by user updater
+      let foundEntry: {
+        record?: DigitadorRecord;
+        usuario: string;
+        nombre: string;
+        dni: string;
+        punto: string;
+        codPunto: string;
+        eessPrincipal: string;
+        cargo: string;
+        estado: 'ACTIVO' | 'INACTIVO';
+        correo: string;
+        telefono: string;
+        matchingAtenciones: Atencion[];
+      } | undefined = undefined;
+
+      for (const entry of digitadorMap.values()) {
+        const normEntryName = normalizeStr(entry.nombre);
+        const entryUser = entry.usuario.toLowerCase();
+
+        if (
+          (normEntryName && normKey && normEntryName === normKey) ||
+          (entryUser && (rawLower === entryUser || (a.usuario_actualiza && a.usuario_actualiza.toLowerCase() === entryUser))) ||
+          (entry.dni && a.doc_identidad && entry.dni === a.doc_identidad)
+        ) {
+          foundEntry = entry;
+          break;
+        }
+      }
+
+      if (!foundEntry) {
         // Create an unlinked or auto-detected entry
-        entry = {
+        const generatedUser = rawName.toLowerCase().replace(/^(lic\.|tec\.|bach\.|dr\.|dra\.|ing\.|mg\.)\s*/i, '').replace(/[^a-z0-9]/g, '');
+        foundEntry = {
+          usuario: generatedUser,
           nombre: rawName,
           dni: '',
           punto: a.punto_digitacion || 'PUNTO ASIGNADO EN ATENCIÓN',
@@ -166,10 +200,19 @@ export const AtencionesDigitadores: React.FC<Props> = ({
           telefono: '',
           matchingAtenciones: [],
         };
-        digitadorMap.set(normKey, entry);
+        digitadorMap.set(normKey, foundEntry);
+      } else {
+        // If entry didn't have punto specified from simple Excel (usuario, DNI, nombres), auto-link from atenciones!
+        if ((!foundEntry.punto || foundEntry.punto === 'PUNTO NO ESPECIFICADO') && a.punto_digitacion) {
+          foundEntry.punto = a.punto_digitacion;
+          foundEntry.codPunto = a.cod_punto_digitacion || foundEntry.codPunto;
+        }
+        if (!foundEntry.eessPrincipal && a.nombre_eess) {
+          foundEntry.eessPrincipal = a.nombre_eess;
+        }
       }
 
-      entry.matchingAtenciones.push(a);
+      foundEntry.matchingAtenciones.push(a);
     });
 
     // Build the full complete stats for each
@@ -272,6 +315,7 @@ export const AtencionesDigitadores: React.FC<Props> = ({
 
       result.push({
         id: entry.record?.id || `auto-${key}`,
+        usuario: entry.usuario || entry.nombre.toLowerCase().replace(/[^a-z0-9]/g, ''),
         dni: entry.dni,
         nombre_completo: entry.nombre,
         cod_punto_digitacion: entry.codPunto,
@@ -305,10 +349,11 @@ export const AtencionesDigitadores: React.FC<Props> = ({
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         const matchName = stat.nombre_completo.toLowerCase().includes(term);
+        const matchUser = (stat.usuario || '').toLowerCase().includes(term);
         const matchDni = stat.dni.toLowerCase().includes(term);
         const matchPunto = stat.punto_digitacion.toLowerCase().includes(term);
         const matchEess = (stat.nombre_eess || '').toLowerCase().includes(term);
-        if (!matchName && !matchDni && !matchPunto && !matchEess) return false;
+        if (!matchName && !matchUser && !matchDni && !matchPunto && !matchEess) return false;
       }
 
       // Filter by punto
@@ -395,6 +440,7 @@ export const AtencionesDigitadores: React.FC<Props> = ({
 
     PdfService.generateFichaDigitadorPdf({
       digitador: {
+        usuario: stat.usuario,
         dni: stat.dni,
         nombre: stat.nombre_completo,
         puntoDigitacion: stat.punto_digitacion,
@@ -737,9 +783,16 @@ export const AtencionesDigitadores: React.FC<Props> = ({
                       <tr key={stat.id} className="hover:bg-blue-50/30 transition-colors">
                         <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">{rowNum}</td>
                         <td className="py-2.5 px-3">
-                          <div className="font-bold text-slate-900">{stat.nombre_completo}</div>
+                          <div className="font-bold text-slate-900 flex items-center space-x-2">
+                            <span>{stat.nombre_completo}</span>
+                            {stat.usuario && (
+                              <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium border border-slate-200">
+                                @{stat.usuario}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-slate-400 flex items-center space-x-1.5 mt-0.5">
-                            <span className="font-mono">{stat.dni || 'S/DNI'}</span>
+                            <span className="font-mono">DNI: {stat.dni || 'S/DNI'}</span>
                             <span>•</span>
                             <span className="truncate max-w-[120px]">{stat.cargo || 'Digitador'}</span>
                             <span>•</span>

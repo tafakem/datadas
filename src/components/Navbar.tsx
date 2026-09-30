@@ -145,6 +145,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>B.2. Por Punto de Digitación</span>
                     <span className="text-[10px] text-slate-400">Ranking</span>
                   </button>
+                  <button onClick={() => handleNavClick('stats-digitadores')} className="w-full text-left px-3 py-2 text-xs text-emerald-300 font-semibold hover:bg-emerald-600 hover:text-white flex items-center justify-between bg-emerald-950/20">
+                    <span>B.2.1 Por Digitador (Fecha Atención)</span>
+                    <span className="text-[9px] bg-emerald-900/60 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700/60 font-mono">Ficha Técnica</span>
+                  </button>
                   <button onClick={() => handleNavClick('stats-profesional')} className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-blue-600 hover:text-white flex items-center justify-between">
                     <span>B.3. Por Profesional</span>
                     <span className="text-[10px] text-slate-400">Top 10</span>
@@ -371,6 +375,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="grid grid-cols-2 gap-1 px-1">
             <button onClick={() => handleNavClick('stats-mes-eess')} className="text-left px-2 py-1.5 rounded text-xs text-emerald-300 font-bold hover:bg-slate-800">B.1 Atenciones vs Atendidos (EESS)</button>
             <button onClick={() => handleNavClick('stats-punto-dig')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.2 Punto Digitación</button>
+            <button onClick={() => handleNavClick('stats-digitadores')} className="col-span-2 text-left px-2 py-1.5 rounded text-xs text-emerald-300 font-bold bg-emerald-950/40 border border-emerald-800/40 hover:bg-slate-800">B.2.1 Por Digitador (Fecha Atención)</button>
             <button onClick={() => handleNavClick('stats-profesional')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.3 Profesional</button>
             <button onClick={() => handleNavClick('stats-servicio')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.4 Servicio</button>
             <button onClick={() => handleNavClick('stats-sexo-edad')} className="text-left px-2 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800">B.5 Sexo y Edad</button>
