@@ -479,7 +479,7 @@ export async function getAtencionesPaged(params: {
 }> {
   const database = getDatabase();
   const page = Math.max(1, Number(params.page) || 1);
-  const pageSize = Math.max(1, Math.min(3000000, Number(params.pageSize) || 15));
+  const pageSize = Math.max(1, Math.min(25000, Number(params.pageSize) || 15));
   const offset = (page - 1) * pageSize;
 
   const { whereClause, binds } = buildFilterClause(params.filters || {}, params.search);
@@ -789,6 +789,147 @@ export async function getAtendidosAggregatedStats(
     matrix,
     years: years.length > 0 ? years : ['2026'],
   };
+}
+
+/**
+ * High-speed aggregated metrics across all statistical modules for 2,000,000+ records
+ */
+export async function getModulesAggregatedStats(filterParams: Record<string, string> = {}): Promise<any> {
+  const cacheKey = `modules_${JSON.stringify(filterParams)}`;
+  const cached = statsCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const database = getDatabase();
+  const { whereClause, binds } = buildFilterClause(filterParams, filterParams.search);
+
+  // 1. Overall KPIs
+  const kpiRow = database.prepare(`
+    SELECT 
+      count(*) as totalAtenciones,
+      count(DISTINCT doc_identidad) as totalPacientes,
+      count(DISTINCT codigo_eess) as totalEess,
+      count(DISTINCT dni_profesional) as totalProfesionales,
+      count(DISTINCT cod_punto_digitacion) as totalPuntos,
+      coalesce(sum(tarifa), 0) as totalTarifas
+    FROM atenciones
+    ${whereClause}
+  `).get(...binds) as any;
+
+  // 2. Puntos de Digitación Ranking
+  const puntos = database.prepare(`
+    SELECT 
+      punto_digitacion as nombre,
+      cod_punto_digitacion as codigo,
+      count(*) as atenciones,
+      count(DISTINCT digitador) as digitadores,
+      count(DISTINCT codigo_eess) as eessCount,
+      count(DISTINCT doc_identidad) as pacientes,
+      coalesce(sum(tarifa), 0) as totalTarifa
+    FROM atenciones
+    ${whereClause}
+    GROUP BY punto_digitacion
+    ORDER BY atenciones DESC
+  `).all(...binds);
+
+  // 3. Profesionales Ranking
+  const profesionales = database.prepare(`
+    SELECT 
+      nombre_profesional as nombre,
+      dni_profesional as dni,
+      max(tipo_profesional) as tipo,
+      max(colegiatura) as colegiatura,
+      count(*) as atenciones,
+      count(DISTINCT doc_identidad) as pacientes,
+      coalesce(sum(tarifa), 0) as totalTarifa
+    FROM atenciones
+    ${whereClause}
+    GROUP BY nombre_profesional
+    ORDER BY atenciones DESC
+    LIMIT 200
+  `).all(...binds);
+
+  // 4. Servicios Ranking
+  const servicios = database.prepare(`
+    SELECT 
+      descripcion_servicio as servicio,
+      cod_servicio as codigo,
+      count(*) as atenciones,
+      count(DISTINCT doc_identidad) as pacientes,
+      coalesce(sum(tarifa), 0) as totalTarifa
+    FROM atenciones
+    ${whereClause}
+    GROUP BY descripcion_servicio
+    ORDER BY atenciones DESC
+  `).all(...binds);
+
+  // 5. Sexo & Edad Pyramid
+  const sexoEdad = database.prepare(`
+    SELECT 
+      sexo,
+      edad,
+      count(*) as cantidad
+    FROM atenciones
+    ${whereClause}
+    GROUP BY sexo, edad
+  `).all(...binds);
+
+  // 6. Condición Materna
+  const condicionMaterna = database.prepare(`
+    SELECT 
+      condicion_materna as condicion,
+      count(*) as cantidad
+    FROM atenciones
+    ${whereClause}
+    GROUP BY condicion_materna
+  `).all(...binds);
+
+  // 7. Tipo y Lugar de Atención
+  const tipoAtencion = database.prepare(`
+    SELECT 
+      tipo_atencion as tipo,
+      lugar_atencion as lugar,
+      count(*) as cantidad
+    FROM atenciones
+    ${whereClause}
+    GROUP BY tipo_atencion, lugar_atencion
+  `).all(...binds);
+
+  // 8. DISA / Región
+  const disa = database.prepare(`
+    SELECT 
+      disa,
+      count(*) as atenciones,
+      count(DISTINCT codigo_eess) as eessCount,
+      count(DISTINCT doc_identidad) as pacientes,
+      coalesce(sum(tarifa), 0) as totalTarifa
+    FROM atenciones
+    ${whereClause}
+    GROUP BY disa
+    ORDER BY atenciones DESC
+  `).all(...binds);
+
+  const result = {
+    kpis: {
+      totalAtenciones: Number(kpiRow?.totalAtenciones) || 0,
+      totalPacientes: Number(kpiRow?.totalPacientes) || 0,
+      totalEess: Number(kpiRow?.totalEess) || 0,
+      totalProfesionales: Number(kpiRow?.totalProfesionales) || 0,
+      totalPuntos: Number(kpiRow?.totalPuntos) || 0,
+      totalTarifas: Number(kpiRow?.totalTarifas) || 0,
+    },
+    puntos,
+    profesionales,
+    servicios,
+    sexoEdad,
+    condicionMaterna,
+    tipoAtencion,
+    disa,
+  };
+
+  statsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+  return result;
 }
 
 /**

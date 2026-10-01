@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -11,6 +11,7 @@ import {
   Layers
 } from 'lucide-react';
 import { Atencion } from '../types/health';
+import { apiService } from '../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
@@ -19,6 +20,15 @@ interface Props {
 export const ChartsGallery: React.FC<Props> = ({ atenciones }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>('TODOS');
   const [metricType, setMetricType] = useState<'volumen' | 'tarifas'>('volumen');
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    apiService.getDashboardStats().then(data => {
+      if (mounted) setDashboardStats(data);
+    }).catch(err => console.warn('Charts stats notice:', err));
+    return () => { mounted = false; };
+  }, []);
 
   const allPeriods = Array.from(new Set(atenciones.map(a => a.periodo_cierre))).sort();
 

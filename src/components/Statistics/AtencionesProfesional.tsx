@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   UserCheck,
   Stethoscope,
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
@@ -376,6 +377,16 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
 
     return Object.values(map).sort((a, b) => b.totalAtenciones - a.totalAtenciones);
   }, [atenciones]);
+
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Prof stats notice:', err));
+    return () => { active = false; };
+  }, []);
 
   // Filtered professionals list based on search and top filters
   const filteredProfList = useMemo(() => {

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
@@ -155,7 +156,29 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
     if (a.fecha_registro) puntoMap[key].fechasRegistro.push(a.fecha_registro);
   });
 
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Module stats notice:', err));
+    return () => { active = false; };
+  }, []);
+
   const fullRanking = useMemo(() => {
+    if (serverStats?.puntos && serverStats.puntos.length > 0) {
+      const grandTotal = serverStats.kpis?.totalAtenciones || 1;
+      return serverStats.puntos.map((p: any) => ({
+        nombre: p.nombre || 'SIN PUNTO ASIGNADO',
+        cod: p.codigo || 'S/C',
+        count: p.atenciones,
+        eessCount: p.eessCount || 1,
+        digitadoresCount: p.digitadores || 1,
+        porcentaje: Math.round((p.atenciones / grandTotal) * 10000) / 100,
+      }));
+    }
+
     return Object.entries(puntoMap)
       .map(([nombre, data]) => ({
         nombre,
@@ -166,13 +189,13 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
         porcentaje: Math.round((data.count / (atenciones.length || 1)) * 10000) / 100,
       }))
       .sort((a, b) => b.count - a.count);
-  }, [puntoMap, atenciones.length]);
+  }, [puntoMap, atenciones.length, serverStats]);
 
   // Filter ranking by search term (search by name, code or digitador)
   const filteredRanking = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return fullRanking;
-    return fullRanking.filter(r => {
+    return fullRanking.filter((r: any) => {
       const matchName = r.nombre.toLowerCase().includes(term);
       const matchCod = r.cod.toLowerCase().includes(term);
       const pointData = puntoMap[r.nombre];
@@ -195,7 +218,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
       list = list.filter(a => (a.punto_digitacion || 'SIN PUNTO ASIGNADO').trim() === activePunto);
     } else if (searchTerm.trim()) {
       // If TODOS is selected but user typed a search term, filter by matching puntos
-      const matchingPuntoNames = new Set(filteredRanking.map(r => r.nombre));
+      const matchingPuntoNames = new Set(filteredRanking.map((r: any) => r.nombre));
       list = list.filter(a => matchingPuntoNames.has((a.punto_digitacion || 'SIN PUNTO ASIGNADO').trim()));
     }
 
@@ -541,7 +564,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
 
   const handleExportRankingPdf = () => {
     const headers = ['Punto de Digitación', 'Código', 'Atenciones', '% Carga', 'EESS Asignados', 'Digitadores'];
-    const rows = fullRanking.map(r => [
+    const rows = fullRanking.map((r: any) => [
       r.nombre,
       r.cod,
       r.count,
@@ -685,7 +708,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
               className="w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-bold text-slate-800 rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
             >
               <option value="TODOS">Todos los Puntos de Digitación ({atenciones.length} registros)</option>
-              {fullRanking.map(r => (
+              {fullRanking.map((r: any) => (
                 <option key={r.nombre} value={r.nombre}>
                   {r.nombre} [{r.cod}] — {r.count} atenciones ({r.porcentaje}%)
                 </option>
@@ -734,7 +757,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
           >
             Todos ({atenciones.length})
           </button>
-          {fullRanking.slice(0, 5).map(r => (
+          {fullRanking.slice(0, 5).map((r: any) => (
             <button
               key={r.nombre}
               onClick={() => {
@@ -1471,7 +1494,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
                 <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                   {(() => {
                     let accumulated = 0;
-                    return fullRanking.map((r, i) => {
+                    return fullRanking.map((r: any, i: number) => {
                       const strokeDasharray = `${r.porcentaje} ${100 - r.porcentaje}`;
                       const strokeDashoffset = -accumulated;
                       accumulated += r.porcentaje;
@@ -1508,7 +1531,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
 
               {/* Legend with direct selection */}
               <div className="w-full space-y-1.5 mt-3 max-h-48 overflow-y-auto pr-1 text-[11px]">
-                {fullRanking.map((r, i) => (
+                {fullRanking.map((r: any, i: number) => (
                   <div
                     key={r.nombre}
                     onClick={() => {
@@ -1590,7 +1613,7 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
                     </td>
                   </tr>
                 ) : (
-                  filteredRanking.map((r, idx) => {
+                  filteredRanking.map((r: any, idx: number) => {
                     const isSelected = activePunto === r.nombre;
                     return (
                       <tr

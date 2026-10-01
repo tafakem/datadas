@@ -151,6 +151,27 @@ class ApiService {
     return data;
   }
 
+  async getModulesStats(filters?: Partial<FilterState>): Promise<any> {
+    const query = new URLSearchParams();
+    if (filters) {
+      for (const [key, val] of Object.entries(filters)) {
+        if (val && val !== 'TODOS') query.set(key, val);
+      }
+    }
+
+    const cacheKey = `modules_${query.toString()}`;
+    const cached = this.cacheStats.get(cacheKey);
+    if (cached && Date.now() < cached.expires) {
+      return cached.data;
+    }
+
+    const res = await fetch(`/api/stats/modules?${query.toString()}`);
+    if (!res.ok) throw new Error('Error al cargar estadísticas agregadas');
+    const data = await res.json();
+    this.cacheStats.set(cacheKey, { data, expires: Date.now() + 30000 });
+    return data;
+  }
+
   async getFilterOptions(): Promise<FilterOptionsResponse> {
     if (this.cacheOptions && Date.now() < this.cacheOptions.expires) {
       return this.cacheOptions.data;

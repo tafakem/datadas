@@ -24,6 +24,7 @@ import {
   getBackupSettings,
   updateBackupSettings,
   generateFullSqlDumpString,
+  getModulesAggregatedStats,
 } from './src/server/db';
 
 const args = process.argv.slice(2);
@@ -158,6 +159,23 @@ async function startServer() {
       res.json(stats);
     } catch (err: any) {
       console.error('Error calculating atendidos stats:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Modules All Aggregated Metrics
+  app.get('/api/stats/modules', async (req: Request, res: Response) => {
+    try {
+      const filters: Record<string, string> = {};
+      for (const [key, value] of Object.entries(req.query)) {
+        if (typeof value === 'string' && value.trim() && value !== 'TODOS') {
+          filters[key] = value.trim();
+        }
+      }
+      const stats = await getModulesAggregatedStats(filters);
+      res.json(stats);
+    } catch (err: any) {
+      console.error('Error calculating modules stats:', err);
       res.status(500).json({ error: err.message });
     }
   });
