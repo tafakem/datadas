@@ -17,6 +17,13 @@ import {
   persistDatabase,
   clearAtencionesData,
   getAtendidosAggregatedStats,
+  getBackupsList,
+  createDatabaseBackup,
+  restoreDatabaseBackup,
+  deleteBackup,
+  getBackupSettings,
+  updateBackupSettings,
+  generateFullSqlDumpString,
 } from './src/server/db';
 
 const args = process.argv.slice(2);
@@ -249,6 +256,97 @@ async function startServer() {
       res.json(result);
     } catch (err: any) {
       console.error('Benchmark generation error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------
+  // ADMIN BACKUP CONTROL ENDPOINTS
+  // -------------------------------------------------------------
+
+  // List all backups and settings
+  app.get('/api/admin/backups', (req: Request, res: Response) => {
+    try {
+      const backups = getBackupsList();
+      const settings = getBackupSettings();
+      res.json({ backups, settings });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create manual backup
+  app.post('/api/admin/backups/create', (req: Request, res: Response) => {
+    try {
+      const { format, notes, createdBy } = req.body;
+      const record = createDatabaseBackup({
+        type: 'MANUAL',
+        format: format || 'sqlite',
+        notes,
+        createdBy: createdBy || 'Administrador',
+      });
+      res.json({ success: true, backup: record });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Download backup file
+  app.get('/api/admin/backups/download/:filename', (req: Request, res: Response) => {
+    try {
+      const filename = req.params.filename;
+      const filePath = path.resolve('data', 'backups', filename);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Archivo de respaldo no encontrado' });
+      }
+      res.download(filePath, filename);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Restore backup
+  app.post('/api/admin/backups/restore', (req: Request, res: Response) => {
+    try {
+      const { filename, restoredBy } = req.body;
+      if (!filename) {
+        return res.status(400).json({ error: 'Nombre de archivo requerido' });
+      }
+      const result = restoreDatabaseBackup(filename, restoredBy || 'Administrador');
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete backup
+  app.delete('/api/admin/backups/:id', (req: Request, res: Response) => {
+    try {
+      const success = deleteBackup(req.params.id);
+      res.json({ success });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Save backup settings
+  app.post('/api/admin/backups/settings', (req: Request, res: Response) => {
+    try {
+      const updated = updateBackupSettings(req.body);
+      res.json({ success: true, settings: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Export SQL Script
+  app.get('/api/admin/backups/export-sql', (req: Request, res: Response) => {
+    try {
+      const sqlDump = generateFullSqlDumpString();
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="minsa_database_dump_${Date.now()}.sql"`);
+      res.send(sqlDump);
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

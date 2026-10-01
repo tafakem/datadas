@@ -130,6 +130,28 @@ export interface FilterState {
   tipoAtencion: string;
 }
 
+export interface BackupRecord {
+  id: string;
+  filename: string;
+  size_bytes: number;
+  format: 'sqlite' | 'json' | 'sql';
+  type: 'MANUAL' | 'AUTOMATICO' | 'RESTAURACION';
+  total_records: number;
+  created_at: string;
+  created_by: string;
+  checksum?: string;
+  notes?: string;
+}
+
+export interface BackupSettings {
+  enabled: boolean;
+  frequency: 'DIARIO' | 'SEMANAL' | 'MENSUAL';
+  scheduled_time: string;
+  retention_count: number;
+  last_run?: string;
+  next_run?: string;
+}
+
 export type ActiveModule = 
   | 'dashboard'
   | 'stats-mes-eess'
@@ -164,6 +186,8 @@ export type ActiveModule =
   | 'graficos'
   | 'carga-datos'
   | 'usuarios'
+  | 'respaldos'
+  | 'backups'
   | 'documentacion';
 
 export type CoverageCategory = 'MALO' | 'REGULAR' | 'BUENO' | 'REVISA';

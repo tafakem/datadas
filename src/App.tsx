@@ -41,6 +41,7 @@ import { InteractiveMap } from './components/InteractiveMap';
 import { ChartsGallery } from './components/ChartsGallery';
 import { DataUpload } from './components/DataUpload';
 import { UserManagement } from './components/UserManagement';
+import { BackupManagement } from './components/BackupManagement';
 import { SystemDocumentation } from './components/SystemDocumentation';
 
 import { CheckCircle2, AlertTriangle, AlertCircle, X, RotateCcw } from 'lucide-react';
@@ -182,7 +183,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
         {/* Global Filters Component (collapsible panel with real-time feedback) */}
-        {currentModule !== 'documentacion' && currentModule !== 'usuarios' && currentModule !== 'carga-datos' && (
+        {currentModule !== 'documentacion' && currentModule !== 'usuarios' && currentModule !== 'carga-datos' && currentModule !== 'respaldos' && currentModule !== 'backups' && (
           <GlobalFilters
             filters={filters}
             onFilterChange={setFilters}
@@ -352,6 +353,15 @@ export default function App() {
             currentUser={currentUser}
             onOpenLogin={() => setLoginModalOpen(true)}
             onShowToast={showToast}
+          />
+        )}
+
+        {(currentModule === 'respaldos' || currentModule === 'backups') && (
+          <BackupManagement
+            currentUser={currentUser}
+            onOpenLogin={() => setLoginModalOpen(true)}
+            onShowToast={showToast}
+            onDataModified={reloadData}
           />
         )}
 

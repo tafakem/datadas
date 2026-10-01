@@ -16,7 +16,8 @@ import {
   Filter,
   RefreshCw,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  HardDrive
 } from 'lucide-react';
 import { User } from '../types/health';
 
@@ -271,17 +272,31 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* G. Usuarios (Admin) */}
             {currentUser?.rol === 'Administrador' && (
-              <button
-                onClick={() => handleNavClick('usuarios')}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center space-x-1.5 ${
-                  currentModule === 'usuarios'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <Users className="w-4 h-4 text-emerald-400" />
-                <span>Usuarios</span>
-              </button>
+              <>
+                <button
+                  onClick={() => handleNavClick('usuarios')}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center space-x-1.5 ${
+                    currentModule === 'usuarios'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-4 h-4 text-emerald-400" />
+                  <span>Usuarios</span>
+                </button>
+
+                <button
+                  onClick={() => handleNavClick('respaldos')}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center space-x-1.5 ${
+                    currentModule === 'respaldos' || currentModule === 'backups'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <HardDrive className="w-4 h-4 text-emerald-400" />
+                  <span>Respaldos</span>
+                </button>
+              </>
             )}
           </nav>
 
@@ -400,7 +415,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button onClick={() => handleNavClick('graficos')} className="text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800">E. Gráficos</button>
             <button onClick={() => handleNavClick('carga-datos')} className="text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800">F. Carga Excel</button>
             {currentUser?.rol === 'Administrador' && (
-              <button onClick={() => handleNavClick('usuarios')} className="text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800">G. Usuarios</button>
+              <>
+                <button onClick={() => handleNavClick('usuarios')} className="text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800">G. Usuarios</button>
+                <button onClick={() => handleNavClick('respaldos')} className="text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800">H. Respaldos</button>
+              </>
             )}
             <button onClick={onOpenDoc} className="text-left px-3 py-2 rounded-lg text-xs font-semibold text-emerald-400 hover:bg-slate-800">Documentación & SQL</button>
           </div>

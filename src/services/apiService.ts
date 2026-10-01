@@ -1,4 +1,4 @@
-import { Atencion, DigitadorRecord, FilterState } from '../types/health';
+import { Atencion, DigitadorRecord, FilterState, BackupRecord, BackupSettings } from '../types/health';
 
 export interface PagedResponse<T> {
   data: T[];
@@ -250,6 +250,59 @@ class ApiService {
       throw new Error(err.error || 'Error en benchmark');
     }
     return res.json();
+  }
+
+  // Backup management
+  async getBackups(): Promise<{ backups: BackupRecord[]; settings: BackupSettings }> {
+    const res = await fetch('/api/admin/backups');
+    if (!res.ok) throw new Error('Error al consultar lista de respaldos');
+    return res.json();
+  }
+
+  async createBackup(params: {
+    format?: 'sqlite' | 'json' | 'sql';
+    notes?: string;
+    createdBy?: string;
+  }): Promise<BackupRecord> {
+    const res = await fetch('/api/admin/backups/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) throw new Error('Error al generar el respaldo');
+    const data = await res.json();
+    return data.backup;
+  }
+
+  async restoreBackup(filename: string, restoredBy?: string): Promise<{ success: boolean; totalRecords: number; message: string }> {
+    this.cacheStats.clear();
+    this.cacheOptions = null;
+    const res = await fetch('/api/admin/backups/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, restoredBy }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al restaurar respaldo');
+    }
+    return res.json();
+  }
+
+  async deleteBackup(id: string): Promise<boolean> {
+    const res = await fetch(`/api/admin/backups/${id}`, { method: 'DELETE' });
+    return res.ok;
+  }
+
+  async updateBackupSettings(settings: Partial<BackupSettings>): Promise<BackupSettings> {
+    const res = await fetch('/api/admin/backups/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) throw new Error('Error al guardar configuración de respaldos');
+    const data = await res.json();
+    return data.settings;
   }
 }
 

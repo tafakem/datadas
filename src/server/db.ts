@@ -1,11 +1,12 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import { Atencion, DigitadorRecord, User, AuditLog, DistrictCoverage } from '../types/health';
+import { Atencion, DigitadorRecord, User, AuditLog, DistrictCoverage, BackupRecord, BackupSettings } from '../types/health';
 import { INITIAL_ATENCIONES, INITIAL_USERS, INITIAL_LOGS, INITIAL_DISTRICTS, INITIAL_DIGITADORES } from '../data/mockData';
 
 const DB_DIR = path.resolve('data');
 const DB_FILE = path.join(DB_DIR, 'minsa_database.sqlite');
+const BACKUPS_DIR = path.join(DB_DIR, 'backups');
 
 let db: Database.Database | null = null;
 
@@ -190,6 +191,38 @@ function createSchema(database: Database.Database): void {
       porcentaje REAL NOT NULL,
       categoria TEXT NOT NULL
     );
+  `);
+
+  // 6. BACKUP LOGS TABLE
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS backup_logs (
+      id TEXT PRIMARY KEY,
+      filename TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      format TEXT NOT NULL DEFAULT 'sqlite',
+      type TEXT NOT NULL DEFAULT 'MANUAL',
+      total_records INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      checksum TEXT,
+      notes TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_backup_created_at ON backup_logs(created_at);
+  `);
+
+  // 7. BACKUP SETTINGS TABLE
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS backup_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled INTEGER NOT NULL DEFAULT 1,
+      frequency TEXT NOT NULL DEFAULT 'DIARIO',
+      scheduled_time TEXT NOT NULL DEFAULT '02:00',
+      retention_count INTEGER NOT NULL DEFAULT 10,
+      last_run TEXT,
+      next_run TEXT
+    );
+    INSERT OR IGNORE INTO backup_settings (id, enabled, frequency, scheduled_time, retention_count)
+    VALUES (1, 1, 'DIARIO', '02:00', 10);
   `);
 }
 
@@ -1156,4 +1189,339 @@ export async function generateBenchmarkRecords(count: number): Promise<{
     totalNow,
     elapsedMs,
   };
+}
+
+// -------------------------------------------------------------
+// BACKUP CONTROL MANAGEMENT FUNCTIONS
+// -------------------------------------------------------------
+
+function ensureBackupsDirExists(): void {
+  if (!fs.existsSync(BACKUPS_DIR)) {
+    fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+  }
+}
+
+export function getBackupsList(): BackupRecord[] {
+  const database = getDatabase();
+  ensureBackupsDirExists();
+
+  const rows = database.prepare(`
+    SELECT id, filename, size_bytes, format, type, total_records, created_at, created_by, checksum, notes
+    FROM backup_logs
+    ORDER BY created_at DESC
+  `).all() as BackupRecord[];
+
+  return rows.map(r => {
+    const filePath = path.join(BACKUPS_DIR, r.filename);
+    let realSize = r.size_bytes;
+    if (fs.existsSync(filePath)) {
+      try {
+        realSize = fs.statSync(filePath).size;
+      } catch {}
+    }
+    return {
+      ...r,
+      size_bytes: realSize,
+    };
+  });
+}
+
+export function createDatabaseBackup(params: {
+  type?: 'MANUAL' | 'AUTOMATICO' | 'RESTAURACION';
+  format?: 'sqlite' | 'json' | 'sql';
+  createdBy?: string;
+  notes?: string;
+}): BackupRecord {
+  const database = getDatabase();
+  ensureBackupsDirExists();
+
+  const backupType = params.type || 'MANUAL';
+  const format = params.format || 'sqlite';
+  const createdBy = params.createdBy || 'Administrador';
+  const now = new Date();
+
+  // YYYYMMDD_HHmmss
+  const dateStr = now.toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+  const id = `bkp_${Date.now()}`;
+  
+  const countRow = database.prepare('SELECT count(*) as total FROM atenciones').get() as { total: number };
+  const totalRecords = countRow ? Number(countRow.total) : 0;
+
+  let filename = `backup_minsa_${dateStr}.${format}`;
+  let filePath = path.join(BACKUPS_DIR, filename);
+  let fileSize = 0;
+
+  if (format === 'sqlite') {
+    try {
+      database.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (e) {
+      console.warn('WAL checkpoint notice before backup:', e);
+    }
+    fs.copyFileSync(DB_FILE, filePath);
+    fileSize = fs.statSync(filePath).size;
+  } else if (format === 'json') {
+    const atenciones = database.prepare('SELECT * FROM atenciones').all();
+    const users = database.prepare('SELECT * FROM users').all();
+    const digitadores = database.prepare('SELECT * FROM digitadores').all();
+    const audit_logs = database.prepare('SELECT * FROM audit_logs').all();
+    
+    const dump = {
+      system: 'MINSA Estadisticas Salud',
+      version: '2.5',
+      created_at: now.toISOString(),
+      created_by: createdBy,
+      total_atenciones: totalRecords,
+      tables: {
+        atenciones,
+        users,
+        digitadores,
+        audit_logs
+      }
+    };
+    
+    const content = JSON.stringify(dump, null, 2);
+    fs.writeFileSync(filePath, content, 'utf-8');
+    fileSize = Buffer.byteLength(content, 'utf-8');
+  } else if (format === 'sql') {
+    const sqlDump = generateFullSqlDumpString(database);
+    fs.writeFileSync(filePath, sqlDump, 'utf-8');
+    fileSize = Buffer.byteLength(sqlDump, 'utf-8');
+  }
+
+  const record: BackupRecord = {
+    id,
+    filename,
+    size_bytes: fileSize,
+    format,
+    type: backupType,
+    total_records: totalRecords,
+    created_at: now.toISOString(),
+    created_by: createdBy,
+    notes: params.notes || `Respaldo ${backupType.toLowerCase()} generado correctamente (${format.toUpperCase()})`,
+  };
+
+  database.prepare(`
+    INSERT INTO backup_logs (id, filename, size_bytes, format, type, total_records, created_at, created_by, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    record.id, record.filename, record.size_bytes, record.format,
+    record.type, record.total_records, record.created_at, record.created_by, record.notes
+  );
+
+  cleanOldBackupsPolicy();
+
+  return record;
+}
+
+function cleanOldBackupsPolicy(): void {
+  try {
+    const settings = getBackupSettings();
+    if (!settings.retention_count || settings.retention_count <= 0) return;
+
+    const list = getBackupsList();
+
+    if (list.length > settings.retention_count) {
+      const toDelete = list.slice(settings.retention_count);
+      for (const item of toDelete) {
+        deleteBackupFileAndRecord(item.id, item.filename);
+      }
+    }
+  } catch (e) {
+    console.warn('Retention policy cleanup warning:', e);
+  }
+}
+
+function deleteBackupFileAndRecord(id: string, filename: string): void {
+  const database = getDatabase();
+  database.prepare('DELETE FROM backup_logs WHERE id = ? OR filename = ?').run(id, filename);
+  const filePath = path.join(BACKUPS_DIR, filename);
+  if (fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (e) {
+      console.warn(`Could not delete backup file ${filename}:`, e);
+    }
+  }
+}
+
+export function deleteBackup(idOrFilename: string): boolean {
+  const database = getDatabase();
+  const row = database.prepare('SELECT * FROM backup_logs WHERE id = ? OR filename = ?').get(idOrFilename, idOrFilename) as BackupRecord | undefined;
+  if (row) {
+    deleteBackupFileAndRecord(row.id, row.filename);
+    return true;
+  }
+  const filePath = path.join(BACKUPS_DIR, idOrFilename);
+  if (fs.existsSync(filePath)) {
+    try { fs.unlinkSync(filePath); } catch {}
+    return true;
+  }
+  return false;
+}
+
+export function restoreDatabaseBackup(filename: string, restoredBy: string): { success: boolean; totalRecords: number; message: string } {
+  const database = getDatabase();
+  ensureBackupsDirExists();
+
+  const filePath = path.join(BACKUPS_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`El archivo de respaldo "${filename}" no existe en el servidor.`);
+  }
+
+  invalidateCache();
+
+  if (filename.endsWith('.sqlite')) {
+    database.pragma('wal_checkpoint(TRUNCATE)');
+    database.close();
+    db = null;
+
+    fs.copyFileSync(filePath, DB_FILE);
+    
+    const restoredDb = getDatabase();
+    const countRow = restoredDb.prepare('SELECT count(*) as total FROM atenciones').get() as { total: number };
+    const total = countRow ? Number(countRow.total) : 0;
+
+    restoredDb.prepare(`
+      INSERT INTO audit_logs (id, fecha, usuario, rol, accion, detalle)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      `log_${Date.now()}`, new Date().toISOString(), restoredBy, 'Administrador',
+      'ACTUALIZACION', `Base de datos restaurada desde el respaldo ${filename} (${total} atenciones).`
+    );
+
+    return {
+      success: true,
+      totalRecords: total,
+      message: `Restauración de SQLite completada exitosamente. Total de atenciones: ${total.toLocaleString()}.`,
+    };
+  } else if (filename.endsWith('.json')) {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const dump = JSON.parse(raw);
+
+    if (!dump.tables || !Array.isArray(dump.tables.atenciones)) {
+      throw new Error('El archivo JSON no contiene un formato de respaldo válido de la aplicación.');
+    }
+
+    const insertAtenciones = database.transaction((items: any[]) => {
+      database.prepare('DELETE FROM atenciones;').run();
+      const insertStmt = database.prepare(`
+        INSERT INTO atenciones (
+          nro_formato, fecha_atencion, hora_atencion, tipo_doc, doc_identidad,
+          beneficiario, edad, sexo, codigo_eess, nombre_eess, cod_servicio,
+          descripcion_servicio, dni_profesional, nombre_profesional, tipo_profesional,
+          colegiatura, rne, tarifa, historia_clinica, componente, condicion_materna,
+          tipo_atencion, lugar_atencion, eess_referencia, fecha_registro, digitador,
+          nro_cred, periodo_cierre, disa, cod_punto_digitacion, punto_digitacion
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?
+        )
+      `);
+
+      for (const row of items) {
+        insertStmt.run(
+          row.nro_formato, row.fecha_atencion, row.hora_atencion, row.tipo_doc, row.doc_identidad,
+          row.beneficiario, row.edad, row.sexo, row.codigo_eess, row.nombre_eess, row.cod_servicio,
+          row.descripcion_servicio, row.dni_profesional, row.nombre_profesional, row.tipo_profesional,
+          row.colegiatura, row.rne, row.tarifa, row.historia_clinica, row.componente, row.condicion_materna,
+          row.tipo_atencion, row.lugar_atencion, row.eess_referencia, row.fecha_registro, row.digitador,
+          row.nro_cred, row.periodo_cierre, row.disa, row.cod_punto_digitacion, row.punto_digitacion
+        );
+      }
+    });
+
+    insertAtenciones(dump.tables.atenciones);
+    const countRow = database.prepare('SELECT count(*) as total FROM atenciones').get() as { total: number };
+    const total = countRow ? Number(countRow.total) : 0;
+
+    return {
+      success: true,
+      totalRecords: total,
+      message: `Restauración JSON completada exitosamente. Se importaron ${total.toLocaleString()} atenciones.`,
+    };
+  }
+
+  throw new Error('Formato de respaldo no soportado para restauración.');
+}
+
+export function getBackupSettings(): BackupSettings {
+  const database = getDatabase();
+  const row = database.prepare('SELECT enabled, frequency, scheduled_time, retention_count, last_run, next_run FROM backup_settings WHERE id = 1').get() as any;
+  if (!row) {
+    return {
+      enabled: true,
+      frequency: 'DIARIO',
+      scheduled_time: '02:00',
+      retention_count: 10,
+    };
+  }
+  return {
+    enabled: Boolean(row.enabled),
+    frequency: row.frequency || 'DIARIO',
+    scheduled_time: row.scheduled_time || '02:00',
+    retention_count: Number(row.retention_count) || 10,
+    last_run: row.last_run,
+    next_run: row.next_run,
+  };
+}
+
+export function updateBackupSettings(settings: Partial<BackupSettings>): BackupSettings {
+  const database = getDatabase();
+  const current = getBackupSettings();
+  const updated: BackupSettings = {
+    ...current,
+    ...settings,
+  };
+
+  database.prepare(`
+    UPDATE backup_settings
+    SET enabled = ?, frequency = ?, scheduled_time = ?, retention_count = ?, last_run = ?, next_run = ?
+    WHERE id = 1
+  `).run(
+    updated.enabled ? 1 : 0,
+    updated.frequency,
+    updated.scheduled_time,
+    updated.retention_count,
+    updated.last_run || null,
+    updated.next_run || null
+  );
+
+  return updated;
+}
+
+export function generateFullSqlDumpString(databaseParam?: Database.Database): string {
+  const database = databaseParam || getDatabase();
+  let sql = `-- MINSA ESTADISTICAS DE SALUD - FULL SQL DATABASE DUMP\n`;
+  sql += `-- Fecha de generación: ${new Date().toISOString()}\n`;
+  sql += `-- Motor: SQLite 3 / Schema Compatible con PostgreSQL & MySQL\n\n`;
+
+  const tables = ['atenciones', 'users', 'digitadores', 'district_coverage', 'audit_logs'];
+  for (const table of tables) {
+    try {
+      const rows = database.prepare(`SELECT * FROM ${table}`).all();
+      sql += `-- Tabla: ${table} (${rows.length} registros)\n`;
+      if (rows.length > 0) {
+        const firstRow = rows[0] as Record<string, any>;
+        const keys = Object.keys(firstRow);
+        for (const r of rows) {
+          const vals = keys.map(k => {
+            const v = (r as any)[k];
+            if (v === null || v === undefined) return 'NULL';
+            if (typeof v === 'number') return v;
+            return `'${String(v).replace(/'/g, "''")}'`;
+          });
+          sql += `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${vals.join(', ')});\n`;
+        }
+      }
+      sql += `\n`;
+    } catch (e) {
+      console.warn(`Could not dump table ${table}:`, e);
+    }
+  }
+
+  return sql;
 }
