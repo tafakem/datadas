@@ -22,12 +22,16 @@ import {
 const args = process.argv.slice(2);
 let port = 3000;
 let host = '0.0.0.0';
+let hasCliPort = false;
+let hasCliHost = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--port' && args[i + 1]) {
     port = parseInt(args[i + 1], 10);
+    hasCliPort = true;
   }
   if (args[i] === '--host') {
+    hasCliHost = true;
     if (args[i + 1] && !args[i + 1].startsWith('-')) {
       host = args[i + 1];
     } else {
@@ -35,15 +39,16 @@ for (let i = 0; i < args.length; i++) {
     }
   }
 }
-if (process.env.PORT) {
+
+if (!hasCliPort && process.env.PORT) {
   port = parseInt(process.env.PORT, 10);
 }
-if (process.env.HOST) {
+if (!hasCliHost && process.env.HOST) {
   host = process.env.HOST;
 }
 
-const PORT = port;
-const HOST = host;
+const PORT = port || 3000;
+const HOST = host || '0.0.0.0';
 
 async function startServer() {
   const app = express();
