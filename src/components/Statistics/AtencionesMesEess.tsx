@@ -25,14 +25,24 @@ import { Atencion } from '../../types/health';
 import { ExcelService } from '../../services/excelService';
 import { PdfService } from '../../services/pdfService';
 import { TablePagination } from '../TablePagination';
+import { apiService, AtendidosStatsResponse } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
 }
 
 export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
-  // Extract all distinct years available in data (from periodo_cierre or fecha_atencion)
+  const [serverStats, setServerStats] = useState<AtendidosStatsResponse | null>(null);
+  const [loadingServerStats, setLoadingServerStats] = useState(false);
+  const [masterYearsList, setMasterYearsList] = useState<string[]>([]);
+  const [masterEessList, setMasterEessList] = useState<string[]>([]);
+
+  // Extract all distinct years available in data (from serverStats, periodo_cierre or fecha_atencion)
   const allYears = useMemo(() => {
+    if (masterYearsList.length > 0) return masterYearsList;
+    if (serverStats?.years && serverStats.years.length > 0) {
+      return serverStats.years;
+    }
     const yearsSet = new Set<string>();
     for (let i = 0; i < atenciones.length; i++) {
       const a = atenciones[i];
@@ -45,7 +55,7 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     }
     const sorted = Array.from(yearsSet).sort().reverse();
     return sorted.length > 0 ? sorted : ['2026', '2025'];
-  }, [atenciones]);
+  }, [masterYearsList, serverStats, atenciones]);
 
   // Tab State: 'matriz' (EESS vs Mes), 'comparativo' (Atenciones vs Atendidos), 'ranking' (EESS Ranking), 'meses' (Monthly Summary), 'detalle' (Individual Auditable Records)
   const [activeTab, setActiveTab] = useState<'matriz' | 'comparativo' | 'ranking' | 'meses' | 'detalle'>('comparativo');
@@ -89,6 +99,32 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     resetAllPages();
   }, [selectedYear, selectedEess, searchTerm, sortBy]);
 
+  // Load real aggregated metrics directly from SQLite database backend (scalable to 2M+ records)
+  useEffect(() => {
+    let isMounted = true;
+    setLoadingServerStats(true);
+    apiService.getAtendidosStats({
+      periodo: selectedYear !== 'TODOS' ? selectedYear : '',
+      eess: selectedEess !== 'TODOS' ? selectedEess : '',
+      search: searchTerm.trim(),
+    }).then(data => {
+      if (isMounted) {
+        setServerStats(data);
+        if (data.years && data.years.length > 0 && selectedYear === 'TODOS') {
+          setMasterYearsList(data.years);
+        }
+        if (data.eessList && data.eessList.length > 0 && selectedEess === 'TODOS') {
+          setMasterEessList(data.eessList.map(e => e.nombre));
+        }
+        setLoadingServerStats(false);
+      }
+    }).catch(err => {
+      console.warn('Fallback to client props in AtencionesMesEess:', err);
+      if (isMounted) setLoadingServerStats(false);
+    });
+    return () => { isMounted = false; };
+  }, [selectedYear, selectedEess, searchTerm, atenciones]);
+
   // High-performance single-pass aggregation (O(N)) for 1,000,000+ records
   const { 
     allMonths, 
@@ -110,6 +146,90 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
     maxVal,
     maxAtendidos
   } = useMemo(() => {
+    // If real server-side aggregated metrics are loaded, use them directly for 100% precision with zero browser lag
+    if (serverStats) {
+      const eessTotals: Record<string, number> = {};
+      const atendidosMap: Record<string, number> = {};
+      const concentracionMap: Record<string, number> = {};
+      const eessTarifas: Record<string, number> = {};
+      const eessDisas: Record<string, string> = {};
+      const monthTotalsMap: Record<string, number> = {};
+
+      const sortedEess = serverStats.eessList.map(e => {
+        eessTotals[e.nombre] = e.atenciones;
+        atendidosMap[e.nombre] = e.atendidos;
+        concentracionMap[e.nombre] = e.concentracion;
+        eessTarifas[e.nombre] = e.tarifas;
+        eessDisas[e.nombre] = e.disa;
+        return e.nombre;
+      });
+
+      const sortedMonths = serverStats.monthlyList.map(m => {
+        monthTotalsMap[m.mes] = m.atenciones;
+        return m.mes;
+      });
+
+      const max = Math.max(...Object.values(eessTotals), 1);
+      const maxAtend = Math.max(...Object.values(atendidosMap), 1);
+
+      // Top month by EESS
+      const topMonthByEess: Record<string, { month: string; count: number }> = {};
+      sortedEess.forEach(e => {
+        let topM = '';
+        let topC = 0;
+        sortedMonths.forEach(m => {
+          const c = serverStats.matrix[e]?.[m] || 0;
+          if (c > topC) {
+            topC = c;
+            topM = m;
+          }
+        });
+        topMonthByEess[e] = { month: topM || '—', count: topC };
+      });
+
+      // Active EESS by month and top EESS
+      const activeEessByMonth: Record<string, number> = {};
+      const topEessByMonth: Record<string, { eess: string; count: number }> = {};
+      sortedMonths.forEach(m => {
+        let active = 0;
+        let topE = '';
+        let topC = 0;
+        sortedEess.forEach(e => {
+          const c = serverStats.matrix[e]?.[m] || 0;
+          if (c > 0) {
+            active++;
+            if (c > topC) {
+              topC = c;
+              topE = e;
+            }
+          }
+        });
+        activeEessByMonth[m] = active;
+        topEessByMonth[m] = { eess: topE || '—', count: topC };
+      });
+
+      return {
+        allMonths: sortedMonths,
+        allEess: sortedEess,
+        matrix: serverStats.matrix,
+        eessTotalsMap: eessTotals,
+        eessAtendidosMap: atendidosMap,
+        eessConcentracionMap: concentracionMap,
+        eessTarifasMap: eessTarifas,
+        eessDisaMap: eessDisas,
+        eessTopMonthMap: topMonthByEess,
+        monthTotals: monthTotalsMap,
+        monthActiveEessCount: activeEessByMonth,
+        monthTopEessMap: topEessByMonth,
+        grandTotal: serverStats.grandTotal,
+        grandTotalAtendidos: serverStats.grandTotalAtendidos,
+        globalConcentracion: serverStats.globalConcentracion,
+        grandTotalTarifas: serverStats.grandTotalTarifas,
+        maxVal: max,
+        maxAtendidos: maxAtend,
+      };
+    }
+
     const monthSet = new Set<string>();
     const eessSet = new Set<string>();
     const matrixMap: Record<string, Record<string, number>> = {};
@@ -660,8 +780,8 @@ export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
               onChange={e => setSelectedEess(e.target.value)}
               className="bg-transparent font-bold text-slate-800 focus:outline-none max-w-[170px] truncate cursor-pointer"
             >
-              <option value="TODOS">Todos ({allEess.length})</option>
-              {allEess.map(e => (
+              <option value="TODOS">Todos ({(masterEessList.length > 0 ? masterEessList : allEess).length})</option>
+              {(masterEessList.length > 0 ? masterEessList : allEess).map(e => (
                 <option key={e} value={e}>{e}</option>
               ))}
             </select>

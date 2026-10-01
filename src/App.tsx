@@ -12,6 +12,7 @@ import {
   DistrictCoverage 
 } from './types/health';
 import { storageService } from './services/storageService';
+import { apiService } from './services/apiService';
 
 // Layout & Global Components
 import { Navbar } from './components/Navbar';
@@ -63,6 +64,8 @@ export default function App() {
   const [currentModule, setCurrentModule] = useState<ActiveModule>('dashboard');
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [atenciones, setAtenciones] = useState<Atencion[]>(() => storageService.getAtenciones());
+  const [dbTotalRecords, setDbTotalRecords] = useState<number>(() => storageService.getAtenciones().length);
+  const [isLoadingInitial, setIsLoadingInitial] = useState<boolean>(true);
   const [isFilterBarOpen, setIsFilterBarOpen] = useState(false);
 
   // Global Filter State
@@ -78,8 +81,37 @@ export default function App() {
     }, 4000);
   };
 
+  const fetchRecordsFromDb = async () => {
+    try {
+      const health = await apiService.getHealth();
+      setDbTotalRecords(health.totalAtenciones);
+      if (health.totalAtenciones > 0) {
+        const paged = await apiService.getAtencionesPaged({ page: 1, pageSize: 20000 });
+        if (paged.data && paged.data.length > 0) {
+          setAtenciones(paged.data);
+          storageService.saveAtenciones(paged.data);
+        }
+      } else {
+        const local = storageService.getAtenciones();
+        setAtenciones(local);
+        setDbTotalRecords(local.length);
+      }
+    } catch (e) {
+      console.warn('Could not fetch from database backend:', e);
+      const local = storageService.getAtenciones();
+      setAtenciones(local);
+      setDbTotalRecords(local.length);
+    } finally {
+      setIsLoadingInitial(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecordsFromDb();
+  }, []);
+
   const reloadData = () => {
-    setAtenciones(storageService.getAtenciones());
+    fetchRecordsFromDb();
   };
 
   const handleResetData = () => {
@@ -179,7 +211,7 @@ export default function App() {
         )}
 
         {/* Notice when database has 0 records */}
-        {atenciones.length === 0 && (
+        {!isLoadingInitial && dbTotalRecords === 0 && atenciones.length === 0 && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center max-w-xl mx-auto shadow-sm">
             <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100">
               <AlertCircle className="w-7 h-7" />

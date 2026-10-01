@@ -32,6 +32,31 @@ export interface FilterOptionsResponse {
   periodosList: string[];
 }
 
+export interface AtendidosStatsResponse {
+  grandTotal: number;
+  grandTotalAtendidos: number;
+  globalConcentracion: string;
+  grandTotalTarifas: number;
+  eessList: {
+    nombre: string;
+    codigo: string;
+    atenciones: number;
+    atendidos: number;
+    concentracion: number;
+    tarifas: number;
+    disa: string;
+  }[];
+  monthlyList: {
+    mes: string;
+    atenciones: number;
+    atendidos: number;
+    concentracion: number;
+    tarifas: number;
+  }[];
+  matrix: Record<string, Record<string, number>>;
+  years: string[];
+}
+
 export interface BatchUploadResult {
   added: number;
   updated: number;
@@ -97,6 +122,29 @@ class ApiService {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Error al calcular estadísticas');
+    }
+    const data = await res.json();
+    this.cacheStats.set(cacheKey, { data, expires: Date.now() + 30000 });
+    return data;
+  }
+
+  async getAtendidosStats(filters?: Record<string, string>): Promise<AtendidosStatsResponse> {
+    const query = new URLSearchParams();
+    if (filters) {
+      for (const [key, val] of Object.entries(filters)) {
+        if (val && val !== 'TODOS') query.set(key, val);
+      }
+    }
+    const cacheKey = `atendidos_${query.toString()}`;
+    const cached = this.cacheStats.get(cacheKey);
+    if (cached && Date.now() < cached.expires) {
+      return cached.data;
+    }
+
+    const res = await fetch(`/api/stats/atendidos?${query.toString()}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al calcular estadísticas de atendidos');
     }
     const data = await res.json();
     this.cacheStats.set(cacheKey, { data, expires: Date.now() + 30000 });

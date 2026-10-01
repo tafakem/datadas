@@ -25,10 +25,14 @@ export const ChartsGallery: React.FC<Props> = ({ atenciones }) => {
   // Filter dataset
   const filtered = atenciones.filter(a => selectedPeriod === 'TODOS' || a.periodo_cierre === selectedPeriod);
 
-  // 1. Line/Trend Data: Days or Months
+  // 1. Line/Trend Data: Monthly Aggregation
   const dateMap: Record<string, number> = {};
   filtered.forEach(a => {
-    const key = selectedPeriod === 'TODOS' ? a.periodo_cierre : a.fecha_atencion;
+    let key = a.periodo_cierre || '';
+    if (!key && a.fecha_atencion) {
+      key = a.fecha_atencion.substring(0, 7);
+    }
+    if (!key) key = 'S/P';
     const value = metricType === 'volumen' ? 1 : Number(a.tarifa) || 0;
     dateMap[key] = (dateMap[key] || 0) + value;
   });

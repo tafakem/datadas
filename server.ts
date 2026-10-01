@@ -16,10 +16,34 @@ import {
   generateBenchmarkRecords,
   persistDatabase,
   clearAtencionesData,
+  getAtendidosAggregatedStats,
 } from './src/server/db';
 
-const PORT = 3000;
-const HOST = '0.0.0.0';
+const args = process.argv.slice(2);
+let port = 3000;
+let host = '0.0.0.0';
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--port' && args[i + 1]) {
+    port = parseInt(args[i + 1], 10);
+  }
+  if (args[i] === '--host') {
+    if (args[i + 1] && !args[i + 1].startsWith('-')) {
+      host = args[i + 1];
+    } else {
+      host = '0.0.0.0';
+    }
+  }
+}
+if (process.env.PORT) {
+  port = parseInt(process.env.PORT, 10);
+}
+if (process.env.HOST) {
+  host = process.env.HOST;
+}
+
+const PORT = port;
+const HOST = host;
 
 async function startServer() {
   const app = express();
@@ -105,6 +129,23 @@ async function startServer() {
       res.json(stats);
     } catch (err: any) {
       console.error('Error calculating dashboard stats:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Atendidos vs Atenciones Aggregated Metrics (Module B.1 Atendidos)
+  app.get('/api/stats/atendidos', async (req: Request, res: Response) => {
+    try {
+      const filters: Record<string, string> = {};
+      for (const [key, value] of Object.entries(req.query)) {
+        if (typeof value === 'string' && value.trim() && value !== 'TODOS') {
+          filters[key] = value.trim();
+        }
+      }
+      const stats = await getAtendidosAggregatedStats(filters);
+      res.json(stats);
+    } catch (err: any) {
+      console.error('Error calculating atendidos stats:', err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -231,14 +272,26 @@ async function startServer() {
   }
 
   // Graceful shutdown flush
-  process.on('SIGINT', () => {
-    console.log('Flushing database before exit...');
-    persistDatabase();
+  const shutdown = () => {
+    try {
+      persistDatabase();
+    } catch (e) {
+      console.error('Error persisting database on shutdown:', e);
+    }
     process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`\n  VITE v8.3.0  ready in 150 ms\n`);
+    console.log(`  ➜  Local:   http://localhost:${PORT}/`);
+    console.log(`  ➜  Network: http://${HOST}:${PORT}/\n`);
+    console.log(`Health Statistics Full-Stack Server running at http://${HOST}:${PORT}`);
   });
 
-  app.listen(PORT, HOST, () => {
-    console.log(`Health Statistics Full-Stack Server running at http://${HOST}:${PORT}`);
+  server.on('error', (err: any) => {
+    console.error('Server listen error:', err);
   });
 }
 

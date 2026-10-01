@@ -317,6 +317,26 @@ function getCount(database: Database.Database, table: string): number {
 /**
  * Builds standard WHERE clause and binds for atenciones based on filters and search
  */
+export const SQL_NORMALIZED_MES = `
+  CASE 
+    WHEN periodo_cierre IS NOT NULL AND length(trim(periodo_cierre)) >= 6 THEN
+      CASE 
+        WHEN periodo_cierre LIKE '____-__%' THEN substr(periodo_cierre, 1, 7)
+        WHEN length(trim(periodo_cierre)) = 6 AND periodo_cierre GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]' THEN substr(periodo_cierre, 1, 4) || '-' || substr(periodo_cierre, 5, 2)
+        WHEN periodo_cierre LIKE '__/__/____%' THEN substr(periodo_cierre, 7, 4) || '-' || substr(periodo_cierre, 4, 2)
+        ELSE substr(periodo_cierre, 1, 7)
+      END
+    WHEN fecha_atencion IS NOT NULL AND length(trim(fecha_atencion)) >= 7 THEN
+      CASE
+        WHEN fecha_atencion LIKE '____-__%' THEN substr(fecha_atencion, 1, 7)
+        WHEN fecha_atencion LIKE '__/__/____%' THEN substr(fecha_atencion, 7, 4) || '-' || substr(fecha_atencion, 4, 2)
+        WHEN fecha_atencion LIKE '__-__-____%' THEN substr(fecha_atencion, 7, 4) || '-' || substr(fecha_atencion, 4, 2)
+        ELSE substr(fecha_atencion, 1, 7)
+      END
+    ELSE 'S/P'
+  END
+`;
+
 function buildFilterClause(filters: Record<string, string>, search?: string): { whereClause: string; binds: any[] } {
   const conditions: string[] = [];
   const binds: any[] = [];
@@ -329,13 +349,31 @@ function buildFilterClause(filters: Record<string, string>, search?: string): { 
     conditions.push('fecha_atencion <= ?');
     binds.push(filters.fechaFin);
   }
+  if (filters.anio || filters.year) {
+    const yr = (filters.anio || filters.year).trim();
+    conditions.push('(periodo_cierre LIKE ? OR fecha_atencion LIKE ?)');
+    binds.push(`${yr}%`, `${yr}%`);
+  }
   if (filters.periodo) {
-    conditions.push('periodo_cierre = ?');
-    binds.push(filters.periodo);
+    const p = filters.periodo.trim();
+    if (p.length === 4) {
+      // 4-digit Year (e.g. 2026, 2025)
+      conditions.push('(periodo_cierre LIKE ? OR fecha_atencion LIKE ?)');
+      binds.push(`${p}%`, `${p}%`);
+    } else if (p.length === 6 && !p.includes('-')) {
+      // YYYYMM (e.g. 202603)
+      const ym = `${p.substring(0, 4)}-${p.substring(4, 6)}`;
+      conditions.push('(periodo_cierre = ? OR periodo_cierre = ? OR fecha_atencion LIKE ?)');
+      binds.push(p, ym, `${ym}%`);
+    } else {
+      // YYYY-MM
+      conditions.push('(periodo_cierre = ? OR periodo_cierre LIKE ? OR fecha_atencion LIKE ?)');
+      binds.push(p, `${p}%`, `${p}%`);
+    }
   }
   if (filters.eess) {
-    conditions.push('(codigo_eess = ? OR nombre_eess = ?)');
-    binds.push(filters.eess, filters.eess);
+    conditions.push('(codigo_eess = ? OR nombre_eess = ? OR lower(nombre_eess) LIKE ?)');
+    binds.push(filters.eess, filters.eess, `%${filters.eess.toLowerCase()}%`);
   }
   if (filters.profesional) {
     conditions.push('(dni_profesional = ? OR nombre_profesional = ?)');
@@ -370,8 +408,9 @@ function buildFilterClause(filters: Record<string, string>, search?: string): { 
     binds.push(filters.tipoAtencion);
   }
 
-  if (search && search.trim()) {
-    const s = `%${search.trim().toLowerCase()}%`;
+  const effectiveSearch = (search || filters.search || '').trim();
+  if (effectiveSearch) {
+    const s = `%${effectiveSearch.toLowerCase()}%`;
     conditions.push(`(
       lower(nro_formato) LIKE ? OR
       lower(beneficiario) LIKE ? OR
@@ -407,7 +446,7 @@ export async function getAtencionesPaged(params: {
 }> {
   const database = getDatabase();
   const page = Math.max(1, Number(params.page) || 1);
-  const pageSize = Math.max(1, Math.min(100, Number(params.pageSize) || 15));
+  const pageSize = Math.max(1, Math.min(50000, Number(params.pageSize) || 15));
   const offset = (page - 1) * pageSize;
 
   const { whereClause, binds } = buildFilterClause(params.filters || {}, params.search);
@@ -469,7 +508,7 @@ export async function getDashboardAggregatedStats(filters: Record<string, string
   }
 
   const database = getDatabase();
-  const { whereClause, binds } = buildFilterClause(filters);
+  const { whereClause, binds } = buildFilterClause(filters, filters.search);
 
   // 1. Overall KPIs in one single SQL pass
   const kpiSql = `
@@ -491,17 +530,17 @@ export async function getDashboardAggregatedStats(filters: Record<string, string
     montoTotal: Number(kpiRow?.montoTotal) || 0,
   };
 
-  // 2. Monthly Trend (group by indexed periodo_cierre)
+  // 2. Monthly Trend (strictly group by YYYY-MM based on normalized periodo_cierre or fecha_atencion)
   const monthlySql = `
     SELECT 
-      periodo_cierre as mes,
+      ${SQL_NORMALIZED_MES} as mes,
       count(*) as total,
       count(DISTINCT doc_identidad) as pacientes,
       coalesce(sum(tarifa), 0) as tarifa
     FROM atenciones
     ${whereClause}
-    GROUP BY periodo_cierre
-    ORDER BY periodo_cierre ASC
+    GROUP BY mes
+    ORDER BY mes ASC
   `;
   const monthlyData = database.prepare(monthlySql).all(...binds) as any[];
 
@@ -577,6 +616,146 @@ export async function getDashboardAggregatedStats(filters: Record<string, string
 
   statsCache.set(cacheKey, { data: result, timestamp: Date.now() });
   return result;
+}
+
+/**
+ * High-speed aggregated metrics specifically for Módulo Atendidos (B.1 Atenciones vs Atendidos)
+ */
+export async function getAtendidosAggregatedStats(
+  filterParams: Record<string, string> = {}
+): Promise<{
+  grandTotal: number;
+  grandTotalAtendidos: number;
+  globalConcentracion: string;
+  grandTotalTarifas: number;
+  eessList: {
+    nombre: string;
+    codigo: string;
+    atenciones: number;
+    atendidos: number;
+    concentracion: number;
+    tarifas: number;
+    disa: string;
+  }[];
+  monthlyList: {
+    mes: string;
+    atenciones: number;
+    atendidos: number;
+    concentracion: number;
+    tarifas: number;
+  }[];
+  matrix: Record<string, Record<string, number>>;
+  years: string[];
+}> {
+  const database = getDatabase();
+  const { whereClause, binds } = buildFilterClause(filterParams, filterParams.search);
+
+  // 1. Overall KPIs
+  const kpiSql = `
+    SELECT 
+      count(*) as totalAtenciones,
+      count(DISTINCT doc_identidad) as totalAtendidos,
+      coalesce(sum(tarifa), 0) as totalTarifas
+    FROM atenciones
+    ${whereClause}
+  `;
+  const kpi = database.prepare(kpiSql).get(...binds) as any;
+  const grandTotal = Number(kpi?.totalAtenciones) || 0;
+  const grandTotalAtendidos = Number(kpi?.totalAtendidos) || 0;
+  const grandTotalTarifas = Number(kpi?.totalTarifas) || 0;
+  const globalConcentracion = grandTotalAtendidos > 0 ? (grandTotal / grandTotalAtendidos).toFixed(2) : '1.00';
+
+  // 2. By EESS
+  const eessSql = `
+    SELECT 
+      nombre_eess as nombre,
+      codigo_eess as codigo,
+      count(*) as atenciones,
+      count(DISTINCT doc_identidad) as atendidos,
+      coalesce(sum(tarifa), 0) as tarifas,
+      max(disa) as disa
+    FROM atenciones
+    ${whereClause}
+    GROUP BY nombre_eess
+    ORDER BY atenciones DESC
+  `;
+  const rawEess = database.prepare(eessSql).all(...binds) as any[];
+  const eessList = rawEess.map(e => {
+    const atenc = Number(e.atenciones) || 0;
+    const atend = Number(e.atendidos) || 0;
+    return {
+      nombre: e.nombre || 'EESS SIN NOMBRE',
+      codigo: e.codigo || '000000',
+      atenciones: atenc,
+      atendidos: atend,
+      concentracion: atend > 0 ? Math.round((atenc / atend) * 100) / 100 : 1.0,
+      tarifas: Number(e.tarifas) || 0,
+      disa: e.disa || 'MINSA',
+    };
+  });
+
+  // 3. By Month (YYYY-MM)
+  const monthlySql = `
+    SELECT 
+      ${SQL_NORMALIZED_MES} as mes,
+      count(*) as atenciones,
+      count(DISTINCT doc_identidad) as atendidos,
+      coalesce(sum(tarifa), 0) as tarifas
+    FROM atenciones
+    ${whereClause}
+    GROUP BY mes
+    ORDER BY mes ASC
+  `;
+  const rawMonthly = database.prepare(monthlySql).all(...binds) as any[];
+  const monthlyList = rawMonthly.map(m => {
+    const atenc = Number(m.atenciones) || 0;
+    const atend = Number(m.atendidos) || 0;
+    return {
+      mes: m.mes,
+      atenciones: atenc,
+      atendidos: atend,
+      concentracion: atend > 0 ? Math.round((atenc / atend) * 100) / 100 : 1.0,
+      tarifas: Number(m.tarifas) || 0,
+    };
+  });
+
+  // 4. Matrix EESS x Month
+  const matrixSql = `
+    SELECT 
+      nombre_eess as eess,
+      ${SQL_NORMALIZED_MES} as mes,
+      count(*) as atenciones
+    FROM atenciones
+    ${whereClause}
+    GROUP BY nombre_eess, mes
+  `;
+  const matrixRows = database.prepare(matrixSql).all(...binds) as any[];
+  const matrix: Record<string, Record<string, number>> = {};
+  for (const r of matrixRows) {
+    const e = r.eess || 'EESS SIN NOMBRE';
+    if (!matrix[e]) matrix[e] = {};
+    matrix[e][r.mes] = Number(r.atenciones) || 0;
+  }
+
+  // 5. Distinct Years
+  const yearsSet = new Set<string>();
+  monthlyList.forEach(m => {
+    if (m.mes && m.mes.length >= 4) {
+      yearsSet.add(m.mes.substring(0, 4));
+    }
+  });
+  const years = Array.from(yearsSet).sort().reverse();
+
+  return {
+    grandTotal,
+    grandTotalAtendidos,
+    globalConcentracion,
+    grandTotalTarifas,
+    eessList,
+    monthlyList,
+    matrix,
+    years: years.length > 0 ? years : ['2026'],
+  };
 }
 
 /**

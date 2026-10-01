@@ -68,8 +68,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
   // Derived calculations (prefer serverStats for 2M+ scalability)
   const totalAcumulado = serverStats ? serverStats.kpis.totalAtenciones : atenciones.length;
   
-  // Current month (default to latest period available in dataset)
-  const availablePeriods = Array.from(new Set(atenciones.map(a => a.periodo_cierre))).filter(Boolean).sort().reverse();
+  // Available periods from serverStats or client data
+  const availablePeriods = useMemo(() => {
+    if (serverStats?.monthlyData && serverStats.monthlyData.length > 0) {
+      return serverStats.monthlyData.map(m => m.mes).filter(Boolean).sort().reverse();
+    }
+    return Array.from(new Set(atenciones.map(a => a.periodo_cierre))).filter(Boolean).sort().reverse();
+  }, [serverStats, atenciones]);
+
   const currentMonthPeriod = availablePeriods[0] || '2026-09';
 
   const atencionesDelMes = useMemo(() => {
@@ -105,7 +111,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
     semaforoBadge = 'bg-orange-100 text-orange-800 border-orange-300';
   }
 
-  // Monthly trend data - Instant aggregated stats
+  // Monthly trend data - Instant aggregated stats strictly by Month
   const { monthlyDataMap, monthlyTarifasMap, monthKeys, maxMonthVal, maxTarifaVal } = useMemo(() => {
     if (serverStats && serverStats.monthlyData.length > 0) {
       const dataMap: Record<string, number> = {};
@@ -131,14 +137,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
 
     for (let i = 0; i < atenciones.length; i++) {
       const a = atenciones[i];
-      let p = (a.periodo_cierre || '').trim();
-      if (!p && a.fecha_atencion) {
-        const match = String(a.fecha_atencion).match(/^(\d{4})[-/](\d{1,2})/);
-        if (match) {
-          p = `${match[1]}-${match[2].padStart(2, '0')}`;
+      let p = '';
+      const raw = (a.periodo_cierre || a.fecha_atencion || '').trim();
+      const match = raw.match(/^(\d{4})[-/](\d{1,2})/);
+      if (match) {
+        p = `${match[1]}-${match[2].padStart(2, '0')}`;
+      } else {
+        const matchRev = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (matchRev) {
+          p = `${matchRev[3]}-${matchRev[2].padStart(2, '0')}`;
+        } else {
+          const matchComp = raw.match(/^(\d{4})(\d{2})$/);
+          if (matchComp) {
+            p = `${matchComp[1]}-${matchComp[2]}`;
+          } else {
+            p = raw.substring(0, 7) || 'S/P';
+          }
         }
       }
-      if (!p) p = 'S/P';
 
       dataMap[p] = (dataMap[p] || 0) + 1;
       tarifasMap[p] = (tarifasMap[p] || 0) + (Number(a.tarifa) || 0);
@@ -156,6 +172,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
       maxTarifaVal: maxTarifa,
     };
   }, [serverStats, atenciones]);
+
+  // Check if dataset spans multiple years to avoid mixing months of different years
+  const hasMultipleYears = useMemo(() => {
+    const years = new Set<string>();
+    monthKeys.forEach(m => {
+      const match = (m || '').match(/^(\d{4})/);
+      if (match) years.add(match[1]);
+    });
+    return years.size > 1;
+  }, [monthKeys]);
 
   // Service distribution data
   const serviceCountMap: Record<string, number> = {};
@@ -246,29 +272,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  // Helper to parse and format month codes like "2026-09"
+  // Helper to parse and format month codes into Enero, Febrero, etc. (and include Year if multi-year)
   const getMonthInfo = (m: string) => {
     const clean = (m || '').trim();
     const match = clean.match(/^(\d{4})[-/](\d{1,2})/);
     if (match) {
       const year = match[1];
       const monthNum = parseInt(match[2], 10);
-      const shortNames = [
-        '', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
-        'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'
-      ];
       const fullNames = [
         '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
         'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre'
       ];
+      const monthName = fullNames[monthNum] || match[2];
       return {
-        short: shortNames[monthNum] || match[2],
-        full: `${fullNames[monthNum] || match[2]} ${year}`,
+        nameOnly: monthName,
+        short: hasMultipleYears ? `${monthName} ${year}` : monthName,
+        full: `${monthName} ${year}`,
         monthNum: monthNum,
         year: year,
       };
     }
-    return { short: clean, full: clean, monthNum: 0, year: '' };
+    return { nameOnly: clean, short: clean, full: clean, monthNum: 0, year: '' };
   };
 
   return (
@@ -816,27 +840,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ atenciones, onNavigate, on
                                 {formattedText}
                               </text>
 
-                              {/* X-axis Month Label (Two lines: Clean Month Name + Year) */}
+                              {/* X-axis Month Label (Enero, Febrero, etc. If multiple years, include Year) */}
                               <text
                                 x={p.x}
-                                y="190"
+                                y={hasMultipleYears ? 188 : 194}
                                 textAnchor="middle"
                                 className={`text-[12px] font-bold transition-colors select-none ${
                                   isHovered ? 'fill-blue-600 font-extrabold' : isLatest ? 'fill-blue-900 font-extrabold' : 'fill-slate-700'
                                 }`}
                               >
-                                {info.short}
+                                {info.nameOnly}
                               </text>
-                              <text
-                                x={p.x}
-                                y="204"
-                                textAnchor="middle"
-                                className={`text-[10px] font-mono select-none ${
-                                  isHovered ? 'fill-blue-500 font-semibold' : 'fill-slate-400'
-                                }`}
-                              >
-                                {info.year ? `'${info.year.slice(2)}` : ''}
-                              </text>
+                              {hasMultipleYears && (
+                                <text
+                                  x={p.x}
+                                  y="204"
+                                  textAnchor="middle"
+                                  className={`text-[10px] font-mono select-none ${
+                                    isHovered ? 'fill-blue-500 font-semibold' : 'fill-slate-400'
+                                  }`}
+                                >
+                                  {info.year}
+                                </text>
+                              )}
 
                               {/* Indicator dot for latest active month (e.g. Mes 9) */}
                               {isLatest && (

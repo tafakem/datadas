@@ -122,6 +122,11 @@ export class ExcelService {
     if (fechaAtencion.includes('T')) {
       fechaAtencion = fechaAtencion.substring(0, 10);
     }
+    // Normalize DD/MM/YYYY or DD-MM-YYYY to YYYY-MM-DD
+    const dMatch = fechaAtencion.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dMatch) {
+      fechaAtencion = `${dMatch[3]}-${dMatch[2].padStart(2, '0')}-${dMatch[1].padStart(2, '0')}`;
+    }
     if (!fechaAtencion) {
       fechaAtencion = new Date().toISOString().substring(0, 10);
     }
@@ -133,7 +138,17 @@ export class ExcelService {
     const tarifaNum = parseFloat(ExcelService.getRowVal(row, ['tarifa', 'monto', 'costo', 'tarifa_sis'], '0')) || 0;
 
     let periodoCierre = ExcelService.getRowVal(row, ['periodo_cierre', 'periodo']);
-    if (!periodoCierre && fechaAtencion) {
+    if (periodoCierre) {
+      const pIso = periodoCierre.match(/^(\d{4})[-/]?(\d{1,2})/);
+      if (pIso) {
+        periodoCierre = `${pIso[1]}-${pIso[2].padStart(2, '0')}`;
+      } else {
+        const pRev = periodoCierre.match(/^(\d{1,2})[-/](\d{4})/);
+        if (pRev) {
+          periodoCierre = `${pRev[2]}-${pRev[1].padStart(2, '0')}`;
+        }
+      }
+    } else if (fechaAtencion) {
       periodoCierre = fechaAtencion.substring(0, 7);
     }
 
