@@ -87,7 +87,8 @@ export default function App() {
       const health = await apiService.getHealth();
       setDbTotalRecords(health.totalAtenciones);
       if (health.totalAtenciones > 0) {
-        const paged = await apiService.getAtencionesPaged({ page: 1, pageSize: 20000 });
+        const fetchSize = Math.max(health.totalAtenciones, 500000);
+        const paged = await apiService.getAtencionesPaged({ page: 1, pageSize: fetchSize });
         if (paged.data && paged.data.length > 0) {
           setAtenciones(paged.data);
           storageService.saveAtenciones(paged.data);

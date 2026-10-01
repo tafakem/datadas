@@ -479,7 +479,7 @@ export async function getAtencionesPaged(params: {
 }> {
   const database = getDatabase();
   const page = Math.max(1, Number(params.page) || 1);
-  const pageSize = Math.max(1, Math.min(50000, Number(params.pageSize) || 15));
+  const pageSize = Math.max(1, Math.min(3000000, Number(params.pageSize) || 15));
   const offset = (page - 1) * pageSize;
 
   const { whereClause, binds } = buildFilterClause(params.filters || {}, params.search);

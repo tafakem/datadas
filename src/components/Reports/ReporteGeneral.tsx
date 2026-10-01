@@ -115,21 +115,12 @@ export const ReporteGeneral: React.FC<Props> = ({ atenciones }) => {
   };
 
   const handleExportExcel = async () => {
-    if (displayTotal > 20000) {
-      // Export current page or alert
-      const proceed = window.confirm(
-        `El conjunto actual tiene ${displayTotal.toLocaleString()} registros. Se exportará una muestra óptima de hasta 10,000 registros para evitar sobrecargar el navegador. ¿Desea continuar?`
-      );
-      if (!proceed) return;
-    }
-
     try {
       let exportItems: Atencion[] = displayedRows;
       if (isServerActive && displayTotal > displayedRows.length) {
-        // Fetch up to 5,000 for export
         const expRes = await apiService.getAtencionesPaged({
           page: 1,
-          pageSize: Math.min(10000, displayTotal),
+          pageSize: Math.min(250000, displayTotal),
           search: debouncedSearch,
           sortBy: sortField,
           sortDir: sortAsc ? 'ASC' : 'DESC',
