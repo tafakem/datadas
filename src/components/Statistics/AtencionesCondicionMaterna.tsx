@@ -1,20 +1,44 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, Baby, Activity, AlertCircle, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
 }
 
 export const AtencionesCondicionMaterna: React.FC<Props> = ({ atenciones }) => {
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Materna stats notice:', err));
+    return () => { active = false; };
+  }, []);
+
   // Filter for reproductive age women (12 to 49) or all records with materna info
   const mujeresMEF = atenciones.filter(a => a.sexo === 'FEMENINO' && a.edad >= 12 && a.edad <= 49);
+  const totalInDb = serverStats?.kpis?.totalAtenciones || atenciones.length || 1;
 
-  const gestantes = atenciones.filter(a => a.condicion_materna === 'GESTANTE').length;
-  const puerperas = atenciones.filter(a => a.condicion_materna === 'PUERPERA').length;
-  const noGestantes = atenciones.filter(a => a.condicion_materna === 'NO GESTANTE').length;
-  const noAplica = atenciones.filter(a => a.condicion_materna === 'NO APLICA' || !a.condicion_materna).length;
+  let gestantes = atenciones.filter(a => a.condicion_materna === 'GESTANTE').length;
+  let puerperas = atenciones.filter(a => a.condicion_materna === 'PUERPERA').length;
+  let noGestantes = atenciones.filter(a => a.condicion_materna === 'NO GESTANTE').length;
+  let noAplica = atenciones.filter(a => a.condicion_materna === 'NO APLICA' || !a.condicion_materna).length;
+
+  if (serverStats?.condicionMaterna && Array.isArray(serverStats.condicionMaterna)) {
+    gestantes = 0; puerperas = 0; noGestantes = 0; noAplica = 0;
+    for (const c of serverStats.condicionMaterna) {
+      const cond = String(c.condicion || '').toUpperCase();
+      const cnt = Number(c.cantidad) || 0;
+      if (cond === 'GESTANTE') gestantes += cnt;
+      else if (cond === 'PUERPERA') puerperas += cnt;
+      else if (cond === 'NO GESTANTE') noGestantes += cnt;
+      else noAplica += cnt;
+    }
+  }
 
   const totalMaterno = gestantes + puerperas + noGestantes;
   const maxVal = Math.max(gestantes, puerperas, noGestantes, 1);

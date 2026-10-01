@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapPin, Globe, Building, Award, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
@@ -9,6 +10,16 @@ interface Props {
 }
 
 export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap }) => {
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('DISA stats notice:', err));
+    return () => { active = false; };
+  }, []);
+
   const disaMap: Record<string, {
     count: number;
     eess: Set<string>;
@@ -35,21 +46,34 @@ export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap })
     disaMap[key].montoTotal += Number(a.tarifa) || 0;
   });
 
-  const list = Object.entries(disaMap)
-    .map(([disa, data]) => ({
-      disa,
-      atenciones: data.count,
-      eessCount: data.eess.size,
-      profCount: data.profesionales.size,
-      srvCount: data.servicios.size,
-      monto: data.montoTotal,
-      porcentaje: Math.round((data.count / (atenciones.length || 1)) * 1000) / 10,
-    }))
-    .sort((a, b) => b.atenciones - a.atenciones);
+  const list = (serverStats?.disa && serverStats.disa.length > 0)
+    ? serverStats.disa.map((d: any) => {
+        const grandTotal = serverStats.kpis?.totalAtenciones || 1;
+        return {
+          disa: d.disa || 'OTRAS REGIONES',
+          atenciones: d.atenciones,
+          eessCount: d.eessCount || 1,
+          profCount: 1,
+          srvCount: 1,
+          monto: d.totalTarifa || 0,
+          porcentaje: Math.round((d.atenciones / grandTotal) * 1000) / 10,
+        };
+      })
+    : Object.entries(disaMap)
+        .map(([disa, data]) => ({
+          disa,
+          atenciones: data.count,
+          eessCount: data.eess.size,
+          profCount: data.profesionales.size,
+          srvCount: data.servicios.size,
+          monto: data.montoTotal,
+          porcentaje: Math.round((data.count / (atenciones.length || 1)) * 1000) / 10,
+        }))
+        .sort((a, b) => b.atenciones - a.atenciones);
 
   const handleExportPdf = () => {
     const headers = ['DISA / DIRESA / Región', 'Total Atenciones', '% Demanda', 'EESS de Salud', 'Profesionales', 'Servicios', 'Facturado (S/)'];
-    const rows: (string | number)[][] = list.map(r => [
+    const rows: (string | number)[][] = list.map((r: any) => [
       r.disa,
       r.atenciones,
       `${r.porcentaje}%`,
@@ -59,7 +83,7 @@ export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap })
       `S/ ${r.monto.toFixed(2)}`,
     ]);
 
-    const totalFact = list.reduce((acc, r) => acc + r.monto, 0);
+    const totalFact = list.reduce((acc: number, r: any) => acc + r.monto, 0);
 
     PdfService.generateEstadisticaPdf({
       titulo: 'B.8. CONSOLIDADO DE ATENCIONES POR DISA / DIRESA / REGIÓN',
@@ -111,7 +135,7 @@ export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap })
 
       {/* DISA Regional Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {list.map((r, idx) => (
+        {list.map((r: any, idx: number) => (
           <div key={r.disa} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start">
               <span className="text-xs font-bold text-slate-400 font-mono">#0{idx + 1}</span>
@@ -166,7 +190,7 @@ export const AtencionesDisa: React.FC<Props> = ({ atenciones, onNavigateToMap })
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {list.map(r => (
+            {list.map((r: any) => (
               <tr key={r.disa} className="hover:bg-slate-50">
                 <td className="py-3 px-4 font-bold text-slate-900">{r.disa}</td>
                 <td className="py-3 px-4 text-center font-mono">{r.eessCount}</td>

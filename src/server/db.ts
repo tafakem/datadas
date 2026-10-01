@@ -910,6 +910,49 @@ export async function getModulesAggregatedStats(filterParams: Record<string, str
     ORDER BY atenciones DESC
   `).all(...binds);
 
+  // 9. Digitadores Ranking
+  const digitadores = database.prepare(`
+    SELECT 
+      digitador,
+      max(punto_digitacion) as punto_digitacion,
+      max(cod_punto_digitacion) as cod_punto_digitacion,
+      count(*) as atenciones,
+      count(DISTINCT doc_identidad) as pacientes,
+      count(DISTINCT codigo_eess) as eessCount,
+      min(fecha_registro) as minFecha,
+      max(fecha_registro) as maxFecha
+    FROM atenciones
+    ${whereClause}
+    GROUP BY digitador
+    ORDER BY atenciones DESC
+  `).all(...binds);
+
+  // 10. Oportunidad de Digitación
+  const oportunidad = database.prepare(`
+    SELECT 
+      CASE 
+        WHEN (julianday(substr(fecha_registro,1,10)) - julianday(substr(fecha_atencion,1,10))) <= 10 THEN '0-10'
+        WHEN (julianday(substr(fecha_registro,1,10)) - julianday(substr(fecha_atencion,1,10))) <= 29 THEN '11-29'
+        ELSE '30+'
+      END as rango,
+      count(*) as atenciones
+    FROM atenciones
+    ${whereClause}
+    GROUP BY rango
+  `).all(...binds);
+
+  // 11. Período Registro vs Atención (Cruce FUAs)
+  const registroVsAtencion = database.prepare(`
+    SELECT 
+      substr(fecha_atencion,1,7) as mesAtencion,
+      substr(fecha_registro,1,7) as mesRegistro,
+      count(*) as atenciones
+    FROM atenciones
+    ${whereClause}
+    GROUP BY mesAtencion, mesRegistro
+    ORDER BY mesAtencion DESC, mesRegistro DESC
+  `).all(...binds);
+
   const result = {
     kpis: {
       totalAtenciones: Number(kpiRow?.totalAtenciones) || 0,
@@ -917,6 +960,7 @@ export async function getModulesAggregatedStats(filterParams: Record<string, str
       totalEess: Number(kpiRow?.totalEess) || 0,
       totalProfesionales: Number(kpiRow?.totalProfesionales) || 0,
       totalPuntos: Number(kpiRow?.totalPuntos) || 0,
+      totalDigitadores: digitadores.length,
       totalTarifas: Number(kpiRow?.totalTarifas) || 0,
     },
     puntos,
@@ -926,6 +970,9 @@ export async function getModulesAggregatedStats(filterParams: Record<string, str
     condicionMaterna,
     tipoAtencion,
     disa,
+    digitadores,
+    oportunidad,
+    registroVsAtencion,
   };
 
   statsCache.set(cacheKey, { data: result, timestamp: Date.now() });

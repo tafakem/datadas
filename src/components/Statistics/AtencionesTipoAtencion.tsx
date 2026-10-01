@@ -1,23 +1,49 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bed, UserCheck, Home, MapPin, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
 }
 
 export const AtencionesTipoAtencion: React.FC<Props> = ({ atenciones }) => {
-  const total = atenciones.length || 1;
+  const [serverStats, setServerStats] = useState<any>(null);
 
-  // Tipo Atención
-  const ambulatorio = atenciones.filter(a => a.tipo_atencion === 'AMBULATORIO').length;
-  const hospitalizado = atenciones.filter(a => a.tipo_atencion === 'HOSPITALIZADO').length;
-  const emergencia = atenciones.filter(a => a.tipo_atencion === 'EMERGENCIA').length;
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Tipo stats notice:', err));
+    return () => { active = false; };
+  }, []);
 
-  // Lugar Atención
-  const intramural = atenciones.filter(a => a.lugar_atencion === 'INTRAMURAL').length;
-  const extramural = atenciones.filter(a => a.lugar_atencion === 'EXTRAMURAL').length;
+  let total = serverStats?.kpis?.totalAtenciones || atenciones.length || 1;
+
+  let ambulatorio = atenciones.filter(a => a.tipo_atencion === 'AMBULATORIO').length;
+  let hospitalizado = atenciones.filter(a => a.tipo_atencion === 'HOSPITALIZADO').length;
+  let emergencia = atenciones.filter(a => a.tipo_atencion === 'EMERGENCIA').length;
+
+  let intramural = atenciones.filter(a => a.lugar_atencion === 'INTRAMURAL').length;
+  let extramural = atenciones.filter(a => a.lugar_atencion === 'EXTRAMURAL').length;
+
+  if (serverStats?.tipoAtencion && Array.isArray(serverStats.tipoAtencion)) {
+    ambulatorio = 0; hospitalizado = 0; emergencia = 0;
+    intramural = 0; extramural = 0;
+    for (const r of serverStats.tipoAtencion) {
+      const tipo = String(r.tipo || '').toUpperCase();
+      const lugar = String(r.lugar || '').toUpperCase();
+      const cnt = Number(r.cantidad) || 0;
+
+      if (tipo.includes('AMBULATORIO')) ambulatorio += cnt;
+      else if (tipo.includes('HOSPITALIZADO')) hospitalizado += cnt;
+      else if (tipo.includes('EMERGENCIA')) emergencia += cnt;
+
+      if (lugar.includes('INTRAMURAL')) intramural += cnt;
+      else if (lugar.includes('EXTRAMURAL')) extramural += cnt;
+    }
+  }
 
   const handleExportPdf = () => {
     const headers = ['Categoría', 'Clasificación', 'Atenciones', '% Participación'];

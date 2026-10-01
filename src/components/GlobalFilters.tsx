@@ -10,6 +10,7 @@ interface GlobalFiltersProps {
   onClose: () => void;
   atenciones: Atencion[];
   filteredCount: number;
+  totalInDb?: number;
 }
 
 export const GlobalFilters: React.FC<GlobalFiltersProps> = ({
@@ -20,8 +21,11 @@ export const GlobalFilters: React.FC<GlobalFiltersProps> = ({
   onClose,
   atenciones,
   filteredCount,
+  totalInDb,
 }) => {
   if (!isOpen) return null;
+
+  const totalDisplay = Math.max(totalInDb || 0, atenciones.length);
 
   // Extract unique options dynamically from current dataset
   const eessOptions = Array.from(new Set(atenciones.map(a => a.nombre_eess))).sort();
@@ -57,8 +61,8 @@ export const GlobalFilters: React.FC<GlobalFiltersProps> = ({
           <div className="flex items-center space-x-3">
             <div className="bg-slate-800 px-3 py-1 rounded-full text-xs text-slate-300 border border-slate-700">
               Registros coincidentes:{' '}
-              <strong className="text-emerald-400 font-mono text-sm">{filteredCount}</strong> de{' '}
-              <span className="font-mono">{atenciones.length}</span>
+              <strong className="text-emerald-400 font-mono text-sm">{filteredCount.toLocaleString()}</strong> de{' '}
+              <span className="font-mono">{totalDisplay.toLocaleString()}</span>
             </div>
 
             {hasActiveFilters && (

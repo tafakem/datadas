@@ -191,7 +191,8 @@ export default function App() {
             isOpen={isFilterBarOpen}
             onClose={() => setIsFilterBarOpen(false)}
             atenciones={atenciones}
-            filteredCount={filteredAtenciones.length}
+            filteredCount={Object.values(filters).some(v => v !== '') ? filteredAtenciones.length : Math.max(dbTotalRecords, filteredAtenciones.length)}
+            totalInDb={dbTotalRecords}
           />
         )}
 

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Filter, FileText } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
@@ -25,6 +26,15 @@ const AGE_GROUPS: AgeGroup[] = [
 
 export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones }) => {
   const [selectedRango, setSelectedRango] = useState<string>('TODOS');
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('SexoEdad stats notice:', err));
+    return () => { active = false; };
+  }, []);
 
   // Filter if user selects a specific age range
   const filtered = atenciones.filter(a => {
@@ -34,10 +44,27 @@ export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones }) => {
     return a.edad >= group.min && a.edad <= group.max;
   });
 
-  // Calculate Pyramid counts
+  // Calculate Pyramid counts using serverStats if available
   const pyramidData = AGE_GROUPS.map(group => {
-    const hombres = atenciones.filter(a => a.sexo === 'MASCULINO' && a.edad >= group.min && a.edad <= group.max).length;
-    const mujeres = atenciones.filter(a => a.sexo === 'FEMENINO' && a.edad >= group.min && a.edad <= group.max).length;
+    let hombres = 0;
+    let mujeres = 0;
+
+    if (serverStats?.sexoEdad && Array.isArray(serverStats.sexoEdad)) {
+      for (const row of serverStats.sexoEdad) {
+        const edad = Number(row.edad) || 0;
+        const sexo = String(row.sexo || '').toUpperCase();
+        const cnt = Number(row.cantidad) || 0;
+
+        if (edad >= group.min && edad <= group.max) {
+          if (sexo === 'MASCULINO') hombres += cnt;
+          else if (sexo === 'FEMENINO') mujeres += cnt;
+        }
+      }
+    } else {
+      hombres = atenciones.filter(a => a.sexo === 'MASCULINO' && a.edad >= group.min && a.edad <= group.max).length;
+      mujeres = atenciones.filter(a => a.sexo === 'FEMENINO' && a.edad >= group.min && a.edad <= group.max).length;
+    }
+
     const total = hombres + mujeres;
     return {
       label: group.label,

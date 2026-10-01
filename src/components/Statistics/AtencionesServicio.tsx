@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Activity,
   PieChart as PieIcon,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Atencion } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
@@ -51,6 +52,15 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones }) => {
   const [selectedEessFilter, setSelectedEessFilter] = useState<string>('TODOS');
   const [selectedMesFilter, setSelectedMesFilter] = useState<string>('TODOS');
   const [selectedServiceKey, setSelectedServiceKey] = useState<string | null>(null);
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    apiService.getModulesStats().then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Service stats notice:', err));
+    return () => { active = false; };
+  }, []);
 
   // Extract distinct EESS from all atenciones
   const allEessList = useMemo(() => {
