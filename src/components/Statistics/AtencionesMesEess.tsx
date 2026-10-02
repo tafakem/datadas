@@ -21,7 +21,7 @@ import {
   UserCheck,
   Activity
 } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { ExcelService } from '../../services/excelService';
 import { PdfService } from '../../services/pdfService';
 import { TablePagination } from '../TablePagination';
@@ -29,9 +29,10 @@ import { apiService, AtendidosStatsResponse } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
 }
 
-export const AtencionesMesEess: React.FC<Props> = ({ atenciones }) => {
+export const AtencionesMesEess: React.FC<Props> = ({ atenciones, filters }) => {
   const [serverStats, setServerStats] = useState<AtendidosStatsResponse | null>(null);
   const [loadingServerStats, setLoadingServerStats] = useState(false);
   const [masterYearsList, setMasterYearsList] = useState<string[]>([]);

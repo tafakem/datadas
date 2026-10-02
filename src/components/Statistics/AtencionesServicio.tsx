@@ -16,12 +16,13 @@ import {
   Sparkles,
   FileText,
 } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
 import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
 }
 
 // Helper to extract year and month from fecha_atencion
@@ -45,7 +46,7 @@ export const extractMesAtencion = (
   return { key: str.substring(0, 7), label: str.substring(0, 7), year: 0, month: 0 };
 };
 
-export const AtencionesServicio: React.FC<Props> = ({ atenciones }) => {
+export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => {
   const [activeTab, setActiveTab] = useState<'graficos' | 'meses' | 'eess' | 'detalle'>('graficos');
   const [chartType, setChartType] = useState<'barras' | 'circular'>('barras');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -56,11 +57,17 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones }) => {
 
   useEffect(() => {
     let active = true;
-    apiService.getModulesStats().then(data => {
+    const combinedFilters = {
+      ...filters,
+      servicio: selectedServiceKey || (filters?.servicio || ''),
+      eess: selectedEessFilter !== 'TODOS' ? selectedEessFilter : (filters?.eess || ''),
+      search: searchTerm.trim(),
+    };
+    apiService.getModulesStats(combinedFilters).then(data => {
       if (active) setServerStats(data);
     }).catch(err => console.warn('Service stats notice:', err));
     return () => { active = false; };
-  }, []);
+  }, [filters, selectedServiceKey, selectedEessFilter, searchTerm, atenciones]);
 
   // Extract distinct EESS from all atenciones
   const allEessList = useMemo(() => {

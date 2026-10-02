@@ -19,12 +19,13 @@ import {
   User,
   FileText,
 } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
 import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
 }
 
 export type RangoOportunidad = 'TODOS' | '0-10' | '11-29' | '30+';
@@ -100,7 +101,7 @@ export const getRangoInfo = (dias: number | null): {
   };
 };
 
-export const AtencionesOportunidad: React.FC<Props> = ({ atenciones }) => {
+export const AtencionesOportunidad: React.FC<Props> = ({ atenciones, filters }) => {
   const [selectedRango, setSelectedRango] = useState<RangoOportunidad>('TODOS');
   const [selectedPunto, setSelectedPunto] = useState<string>('TODOS');
   const [selectedEess, setSelectedEess] = useState<string>('TODOS');
@@ -112,11 +113,17 @@ export const AtencionesOportunidad: React.FC<Props> = ({ atenciones }) => {
 
   useEffect(() => {
     let active = true;
-    apiService.getModulesStats().then(data => {
+    const combinedFilters = {
+      ...filters,
+      puntoDigitacion: selectedPunto !== 'TODOS' ? selectedPunto : (filters?.puntoDigitacion || ''),
+      eess: selectedEess !== 'TODOS' ? selectedEess : (filters?.eess || ''),
+      search: searchTerm.trim(),
+    };
+    apiService.getModulesStats(combinedFilters).then(data => {
       if (active) setServerStats(data);
     }).catch(err => console.warn('Oportunidad stats notice:', err));
     return () => { active = false; };
-  }, []);
+  }, [filters, selectedPunto, selectedEess, searchTerm, atenciones]);
 
   // List of unique puntos and eess for dropdowns
   const uniquePuntos = useMemo(() => {

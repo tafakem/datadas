@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Filter, FileText } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
 import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
 }
 
 interface AgeGroup {
@@ -24,17 +25,17 @@ const AGE_GROUPS: AgeGroup[] = [
   { label: '60 a más años (Adulto Mayor)', min: 60, max: 150 },
 ];
 
-export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones }) => {
+export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones, filters }) => {
   const [selectedRango, setSelectedRango] = useState<string>('TODOS');
   const [serverStats, setServerStats] = useState<any>(null);
 
   useEffect(() => {
     let active = true;
-    apiService.getModulesStats().then(data => {
+    apiService.getModulesStats(filters).then(data => {
       if (active) setServerStats(data);
     }).catch(err => console.warn('SexoEdad stats notice:', err));
     return () => { active = false; };
-  }, []);
+  }, [filters, atenciones]);
 
   // Filter if user selects a specific age range
   const filtered = atenciones.filter(a => {

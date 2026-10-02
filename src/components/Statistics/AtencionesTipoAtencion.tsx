@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Bed, UserCheck, Home, MapPin, FileText } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
 import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
 }
 
-export const AtencionesTipoAtencion: React.FC<Props> = ({ atenciones }) => {
+export const AtencionesTipoAtencion: React.FC<Props> = ({ atenciones, filters }) => {
   const [serverStats, setServerStats] = useState<any>(null);
 
   useEffect(() => {
     let active = true;
-    apiService.getModulesStats().then(data => {
+    apiService.getModulesStats(filters).then(data => {
       if (active) setServerStats(data);
     }).catch(err => console.warn('Tipo stats notice:', err));
     return () => { active = false; };
-  }, []);
+  }, [filters, atenciones]);
 
   let total = serverStats?.kpis?.totalAtenciones || atenciones.length || 1;
 

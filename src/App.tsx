@@ -253,12 +253,13 @@ export default function App() {
         )}
 
         {(currentModule === 'stats-mes-eess' || currentModule === 'est-mes-eess') && (
-          <AtencionesMesEess atenciones={filteredAtenciones} />
+          <AtencionesMesEess atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-punto-dig' || currentModule === 'est-punto') && (
           <AtencionesPuntoDigitacion
             atenciones={filteredAtenciones}
+            filters={filters}
             initialPunto={filters.puntoDigitacion}
             onNavigateToOportunidad={() => setCurrentModule('stats-oportunidad')}
             onNavigateToRegistroVsAtencion={() => setCurrentModule('stats-registro-atencion')}
@@ -269,6 +270,7 @@ export default function App() {
         {(currentModule === 'stats-digitadores' || currentModule === 'est-digitadores') && (
           <AtencionesDigitadores
             atenciones={filteredAtenciones}
+            filters={filters}
             onNavigateToUpload={() => setCurrentModule('carga-datos')}
             onNavigateToPunto={(punto) => {
               setFilters(f => ({ ...f, puntoDigitacion: punto }));
@@ -278,39 +280,41 @@ export default function App() {
         )}
 
         {(currentModule === 'stats-profesional' || currentModule === 'est-profesional') && (
-          <AtencionesProfesional atenciones={filteredAtenciones} />
+          <AtencionesProfesional atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-servicio' || currentModule === 'est-servicio') && (
-          <AtencionesServicio atenciones={filteredAtenciones} />
+          <AtencionesServicio atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-sexo-edad' || currentModule === 'est-sexo-edad') && (
-          <AtencionesSexoEdad atenciones={filteredAtenciones} />
+          <AtencionesSexoEdad atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-materna' || currentModule === 'est-materna') && (
-          <AtencionesCondicionMaterna atenciones={filteredAtenciones} />
+          <AtencionesCondicionMaterna atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-tipo-atencion' || currentModule === 'est-tipo') && (
-          <AtencionesTipoAtencion atenciones={filteredAtenciones} />
+          <AtencionesTipoAtencion atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-disa' || currentModule === 'est-disa') && (
           <AtencionesDisa
             atenciones={filteredAtenciones}
+            filters={filters}
             onNavigateToMap={() => setCurrentModule('mapa')}
           />
         )}
 
         {(currentModule === 'stats-oportunidad' || currentModule === 'est-oportunidad') && (
-          <AtencionesOportunidad atenciones={filteredAtenciones} />
+          <AtencionesOportunidad atenciones={filteredAtenciones} filters={filters} />
         )}
 
         {(currentModule === 'stats-registro-atencion' || currentModule === 'est-registro-atencion') && (
           <AtencionesRegistroVsAtencion
             atenciones={filteredAtenciones}
+            filters={filters}
             onNavigateToPunto={(punto) => {
               setFilters(f => ({ ...f, puntoDigitacion: punto }));
               setCurrentModule('stats-punto-dig');

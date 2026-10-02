@@ -24,12 +24,13 @@ import {
   X,
   FileText,
 } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
 import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
 }
 
 interface TablePaginationProps {
@@ -184,7 +185,7 @@ export const extractMesAtencion = (
   return { key: str.substring(0, 7), label: str.substring(0, 7), year: 0, month: 0 };
 };
 
-export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
+export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) => {
   const [activeTab, setActiveTab] = useState<'ranking' | 'meses' | 'eess' | 'ficha'>('ranking');
   const [selectedTipo, setSelectedTipo] = useState<string>('TODOS');
   const [selectedEessFilter, setSelectedEessFilter] = useState<string>('TODOS');
@@ -382,11 +383,15 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones }) => {
 
   useEffect(() => {
     let active = true;
-    apiService.getModulesStats().then(data => {
+    const combinedFilters = {
+      ...filters,
+      search: searchTerm.trim(),
+    };
+    apiService.getModulesStats(combinedFilters).then(data => {
       if (active) setServerStats(data);
     }).catch(err => console.warn('Prof stats notice:', err));
     return () => { active = false; };
-  }, []);
+  }, [filters, searchTerm, atenciones]);
 
   // Filtered professionals list based on search and top filters
   const filteredProfList = useMemo(() => {

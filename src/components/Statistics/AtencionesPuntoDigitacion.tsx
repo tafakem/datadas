@@ -21,12 +21,13 @@ import {
   Layers,
   ArrowRight,
 } from 'lucide-react';
-import { Atencion } from '../../types/health';
+import { Atencion, FilterState } from '../../types/health';
 import { PdfService } from '../../services/pdfService';
 import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
   initialPunto?: string;
   onNavigateToOportunidad?: () => void;
   onNavigateToRegistroVsAtencion?: () => void;
@@ -102,6 +103,7 @@ export const calculateDaysDifference = (
 
 export const AtencionesPuntoDigitacion: React.FC<Props> = ({
   atenciones,
+  filters,
   initialPunto,
   onNavigateToOportunidad,
   onNavigateToRegistroVsAtencion,
@@ -160,11 +162,16 @@ export const AtencionesPuntoDigitacion: React.FC<Props> = ({
 
   useEffect(() => {
     let active = true;
-    apiService.getModulesStats().then(data => {
+    const combinedFilters = {
+      ...filters,
+      puntoDigitacion: selectedPunto !== 'TODOS' ? selectedPunto : (filters?.puntoDigitacion || ''),
+      search: searchTerm.trim(),
+    };
+    apiService.getModulesStats(combinedFilters).then(data => {
       if (active) setServerStats(data);
     }).catch(err => console.warn('Module stats notice:', err));
     return () => { active = false; };
-  }, []);
+  }, [filters, selectedPunto, searchTerm, atenciones]);
 
   const fullRanking = useMemo(() => {
     if (serverStats?.puntos && serverStats.puntos.length > 0) {

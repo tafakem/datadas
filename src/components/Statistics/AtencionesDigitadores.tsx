@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   Search,
@@ -23,14 +23,16 @@ import {
   Activity,
   DollarSign
 } from 'lucide-react';
-import { Atencion, DigitadorRecord, DigitadorEstadisticaCompleta, DigitadorEstadisticaMensual } from '../../types/health';
+import { Atencion, DigitadorRecord, DigitadorEstadisticaCompleta, DigitadorEstadisticaMensual, FilterState } from '../../types/health';
 import { storageService } from '../../services/storageService';
 import { ExcelService } from '../../services/excelService';
 import { PdfService } from '../../services/pdfService';
 import { TablePagination } from '../TablePagination';
+import { apiService } from '../../services/apiService';
 
 interface Props {
   atenciones: Atencion[];
+  filters?: Partial<FilterState>;
   onNavigateToUpload?: () => void;
   onNavigateToPunto?: (punto: string) => void;
 }
@@ -68,6 +70,7 @@ const formatMesLabelFull = (yearMonth: string): string => {
 
 export const AtencionesDigitadores: React.FC<Props> = ({
   atenciones,
+  filters,
   onNavigateToUpload,
   onNavigateToPunto,
 }) => {
@@ -78,6 +81,20 @@ export const AtencionesDigitadores: React.FC<Props> = ({
   const [selectedDigitadorModal, setSelectedDigitadorModal] = useState<DigitadorEstadisticaCompleta | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    const combinedFilters = {
+      ...filters,
+      puntoDigitacion: selectedPunto !== 'TODOS' ? selectedPunto : (filters?.puntoDigitacion || ''),
+      search: searchTerm.trim(),
+    };
+    apiService.getModulesStats(combinedFilters).then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Digitadores stats notice:', err));
+    return () => { active = false; };
+  }, [filters, selectedPunto, searchTerm, atenciones]);
 
   // Load digitadores from storage
   const digitadoresPadrón = useMemo(() => {
