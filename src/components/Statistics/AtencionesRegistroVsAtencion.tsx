@@ -166,6 +166,25 @@ export const AtencionesRegistroVsAtencion: React.FC<Props> = ({
       });
     });
 
+    if (serverStats?.registroVsAtencion && Array.isArray(serverStats.registroVsAtencion) && selectedPunto === 'TODOS') {
+      serverStats.registroVsAtencion.forEach((item: any) => {
+        const regKey = item.mesRegistro;
+        const atenKey = item.mesAtencion;
+        const count = Number(item.atenciones) || 0;
+        if (regKey && atenKey) {
+          if (!matrix[regKey]) {
+            matrix[regKey] = {};
+            rowTotals[regKey] = 0;
+          }
+          matrix[regKey][atenKey] = count;
+          rowTotals[regKey] = (rowTotals[regKey] || 0) + count;
+          colTotals[atenKey] = (colTotals[atenKey] || 0) + count;
+          grandTotal += count;
+        }
+      });
+      return { matrix, rowTotals, colTotals, grandTotal };
+    }
+
     puntoFilteredAtenciones.forEach(a => {
       const reg = getYearMonthInfo(a.fecha_registro);
       const aten = getYearMonthInfo(a.fecha_atencion);
@@ -186,7 +205,7 @@ export const AtencionesRegistroVsAtencion: React.FC<Props> = ({
     });
 
     return { matrix, rowTotals, colTotals, grandTotal };
-  }, [puntoFilteredAtenciones, allPeriodosRegistro, allMesesAtencion]);
+  }, [puntoFilteredAtenciones, allPeriodosRegistro, allMesesAtencion, serverStats, selectedPunto]);
 
   // 2. Focused Period Analysis (For Tab 2: e.g. "En el Periodo Marzo se digitó FUAs de Ene, Feb y Mar")
   const focusedPeriodKey = useMemo(() => {

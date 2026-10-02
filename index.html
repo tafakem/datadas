@@ -2,6 +2,34 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        try {
+          var _fetch = window.fetch;
+          if (_fetch) {
+            Object.defineProperty(window, 'fetch', {
+              get: function() { return _fetch; },
+              set: function(v) { _fetch = v; },
+              configurable: true,
+              enumerable: true
+            });
+          }
+        } catch (e) {
+          try {
+            var _proto = Object.getPrototypeOf(window);
+            var _fetchProto = window.fetch;
+            if (_proto && _fetchProto) {
+              Object.defineProperty(_proto, 'fetch', {
+                get: function() { return _fetchProto; },
+                set: function(v) { _fetchProto = v; },
+                configurable: true,
+                enumerable: true
+              });
+            }
+          } catch (err) {}
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sistema de Estadísticas de Salud</title>
     <meta name="description" content="Sistema Web de Estadísticas de Salud para visualización, análisis y gestión de datos de atenciones de salud a partir de archivos Excel." />

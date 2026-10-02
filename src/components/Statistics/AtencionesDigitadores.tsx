@@ -355,9 +355,26 @@ export const AtencionesDigitadores: React.FC<Props> = ({
       });
     });
 
+    if (serverStats?.digitadores && serverStats.digitadores.length > 0) {
+      const serverMap = new Map<string, any>();
+      serverStats.digitadores.forEach((sd: any) => {
+        if (sd.digitador) serverMap.set(normalizeStr(sd.digitador), sd);
+      });
+
+      result.forEach(r => {
+        const normName = normalizeStr(r.nombre_completo);
+        const match = serverMap.get(normName);
+        if (match) {
+          r.totalAtenciones = Number(match.atenciones) || r.totalAtenciones;
+          r.pacientesUnicos = Number(match.pacientes) || r.pacientesUnicos;
+          if (match.eessCount) r.eessCount = Number(match.eessCount);
+        }
+      });
+    }
+
     // Sort by total atenciones descending
     return result.sort((a, b) => b.totalAtenciones - a.totalAtenciones);
-  }, [digitadoresPadrón, atenciones, allMonthsFechaAtencion]);
+  }, [digitadoresPadrón, atenciones, allMonthsFechaAtencion, serverStats]);
 
   // 4. Filtered stats
   const filteredStats = useMemo(() => {

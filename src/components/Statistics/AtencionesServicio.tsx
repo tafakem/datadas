@@ -144,6 +144,21 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
   }
 
   const serviceList = useMemo(() => {
+    if (serverStats?.servicios && serverStats.servicios.length > 0) {
+      return serverStats.servicios.map((s: any) => ({
+        cod: s.codigo || 'S/C',
+        desc: s.servicio || 'SERVICIO NO ESPECIFICADO',
+        key: `${s.codigo || 'S/C'}_${s.servicio || 'SERVICIO'}`,
+        count: Number(s.atenciones) || 0,
+        totalTarifa: Number(s.totalTarifa) || 0,
+        pacientesUnicos: new Set(),
+        eess: new Set(),
+        fechasAtencion: new Set(),
+        mesesMap: {},
+        eessMap: {},
+      })).sort((a: any, b: any) => b.count - a.count);
+    }
+
     const map: Record<string, ServiceItem> = {};
 
     filteredAtenciones.forEach(a => {
@@ -214,7 +229,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
     return set.size;
   }, [filteredAtenciones]);
 
-  const maxVal = useMemo(() => Math.max(...serviceList.map(s => s.count), 1), [serviceList]);
+  const maxVal = useMemo(() => Math.max(...serviceList.map((s: any) => s.count), 1), [serviceList]);
 
   // Flatten pairs: Service x EESS for Tab 3
   const serviceEessPairs = useMemo(() => {
@@ -229,8 +244,8 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
       pacientesCount: number;
     }> = [];
 
-    serviceList.forEach(s => {
-      Object.values(s.eessMap).forEach(e => {
+    serviceList.forEach((s: any) => {
+      Object.values(s.eessMap || {}).forEach((e: any) => {
         const pct = Math.round((e.count / (s.count || 1)) * 1000) / 10;
         list.push({
           serviceCod: s.cod,
@@ -268,8 +283,8 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
         'Tarifa Total (S/)',
         ...allMonthsList.map(m => `Mes ${m.label}`),
       ];
-      rows = serviceList.map(s => {
-        const monthCols = allMonthsList.map(m => String(s.mesesMap[m.key]?.count || 0));
+      rows = serviceList.map((s: any) => {
+        const monthCols = allMonthsList.map(m => String(s.mesesMap?.[m.key]?.count || 0));
         return [
           s.cod,
           `"${s.desc}"`,
@@ -311,11 +326,11 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
         '% Demanda',
         'Tarifa Acumulada (S/)',
       ];
-      rows = serviceList.map(s => [
+      rows = serviceList.map((s: any) => [
         s.cod,
         `"${s.desc}"`,
-        String(s.eess.size),
-        String(s.pacientesUnicos.size),
+        String(s.eess?.size || 1),
+        String(s.pacientesUnicos?.size || 1),
         String(s.count),
         `${((s.count / totalAtenciones) * 100).toFixed(1)}%`,
         s.totalTarifa.toFixed(2),
@@ -344,12 +359,12 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
     if (activeTab === 'meses') {
       titulo = 'B.4. DISTRIBUCIÓN MENSUAL POR SERVICIO (FECHA DE ATENCIÓN)';
       headers = ['Cód.', 'Descripción Servicio', 'Total', 'Tarifa (S/)', ...allMonthsList.map(m => m.label)];
-      rows = serviceList.map(s => [
+      rows = serviceList.map((s: any) => [
         s.cod,
         s.desc,
         s.count,
         `S/ ${s.totalTarifa.toFixed(2)}`,
-        ...allMonthsList.map(m => s.mesesMap[m.key]?.count || 0),
+        ...allMonthsList.map(m => s.mesesMap?.[m.key]?.count || 0),
       ]);
       filename = 'Servicios_Mensual_Fecha_Atencion.pdf';
     } else if (activeTab === 'eess') {
@@ -368,11 +383,11 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
       filename = 'Servicios_Por_Establecimiento.pdf';
     } else {
       headers = ['Cód.', 'Descripción del Servicio', 'EESS Oferentes', 'Pacientes Únicos', 'Atenciones', '% Demanda', 'Tarifa (S/)'];
-      rows = serviceList.map(s => [
+      rows = serviceList.map((s: any) => [
         s.cod,
         s.desc,
-        s.eess.size,
-        s.pacientesUnicos.size,
+        s.eess?.size || 1,
+        s.pacientesUnicos?.size || 1,
         s.count,
         `${((s.count / totalAtenciones) * 100).toFixed(1)}%`,
         `S/ ${s.totalTarifa.toFixed(2)}`,
@@ -661,7 +676,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
 
             {chartType === 'barras' ? (
               <div className="space-y-4">
-                {serviceList.map((srv, idx) => {
+                {serviceList.map((srv: any, idx: number) => {
                   const pct = Math.round((srv.count / totalAtenciones) * 1000) / 10;
                   const barWidth = Math.max(Math.round((srv.count / maxVal) * 100), 5);
                   const color = colors[idx % colors.length];
@@ -677,7 +692,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
                             {srv.desc}
                           </span>
                           <span className="text-[10px] text-slate-400 hidden md:inline">
-                            ({srv.eess.size} EESS)
+                            ({srv.eess?.size || 1} EESS)
                           </span>
                         </div>
                         <div className="font-mono font-bold text-slate-800 whitespace-nowrap">
@@ -703,7 +718,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
                   <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                     {(() => {
                       let accumulated = 0;
-                      return serviceList.map((srv, i) => {
+                      return serviceList.map((srv: any, i: number) => {
                         const pct = (srv.count / totalAtenciones) * 100;
                         const strokeDasharray = `${pct} ${100 - pct}`;
                         const strokeDashoffset = -accumulated;
@@ -731,7 +746,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs flex-1 max-h-72 overflow-y-auto pr-2">
-                  {serviceList.map((srv, i) => (
+                  {serviceList.map((srv: any, i: number) => (
                     <div key={srv.key} className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-slate-50">
                       <span
                         className="w-3 h-3 rounded-full flex-shrink-0"
@@ -777,7 +792,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {serviceList.map(s => {
+                  {serviceList.map((s: any) => {
                     const pct = ((s.count / totalAtenciones) * 100).toFixed(1);
                     return (
                       <tr key={s.key} className="hover:bg-slate-50 transition-colors">
@@ -785,11 +800,11 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
                         <td className="py-3 px-4 font-bold text-slate-800">{s.desc}</td>
                         <td className="py-3 px-3 text-center font-mono">
                           <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-bold border border-purple-200">
-                            {s.eess.size} EESS
+                            {s.eess?.size || 1} EESS
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center font-mono font-semibold text-slate-700">
-                          {s.pacientesUnicos.size}
+                          {s.pacientesUnicos?.size || 1}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-blue-600">{s.count}</td>
                         <td className="py-3 px-3 text-right font-mono text-slate-600">{pct}%</td>
@@ -871,7 +886,7 @@ export const AtencionesServicio: React.FC<Props> = ({ atenciones, filters }) => 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {serviceList.map(s => {
+                  {serviceList.map((s: any) => {
                     return (
                       <tr key={s.key} className="hover:bg-slate-50 transition-colors">
                         <td className="py-2.5 px-3 font-mono font-bold text-slate-500 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100">

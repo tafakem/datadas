@@ -77,9 +77,9 @@ export const AtencionesSexoEdad: React.FC<Props> = ({ atenciones, filters }) => 
 
   const maxValInGroup = Math.max(...pyramidData.map(d => Math.max(d.hombres, d.mujeres)), 1);
 
-  const totalHombres = atenciones.filter(a => a.sexo === 'MASCULINO').length;
-  const totalMujeres = atenciones.filter(a => a.sexo === 'FEMENINO').length;
-  const totalGral = atenciones.length || 1;
+  const totalHombres = pyramidData.reduce((acc, d) => acc + d.hombres, 0);
+  const totalMujeres = pyramidData.reduce((acc, d) => acc + d.mujeres, 0);
+  const totalGral = (totalHombres + totalMujeres) || serverStats?.kpis?.totalAtenciones || atenciones.length || 1;
 
   const pctHombres = Math.round((totalHombres / totalGral) * 100);
   const pctMujeres = Math.round((totalMujeres / totalGral) * 100);

@@ -279,7 +279,40 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
     maxFecha: string;
   }
 
+  const [serverStats, setServerStats] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    const combinedFilters = {
+      ...filters,
+      search: searchTerm.trim(),
+    };
+    apiService.getModulesStats(combinedFilters).then(data => {
+      if (active) setServerStats(data);
+    }).catch(err => console.warn('Prof stats notice:', err));
+    return () => { active = false; };
+  }, [filters, searchTerm, atenciones]);
+
   const profAggregated = useMemo(() => {
+    if (serverStats?.profesionales && serverStats.profesionales.length > 0) {
+      return serverStats.profesionales.map((p: any) => ({
+        dni: p.dni || 'SIN_DNI',
+        nombre: p.nombre || 'PROFESIONAL NO IDENTIFICADO',
+        tipo: p.tipo || 'ASISTENCIAL',
+        colegiatura: p.colegiatura || '',
+        rne: p.rne || '',
+        totalAtenciones: Number(p.atenciones) || 0,
+        montoTotalFacturado: Number(p.totalTarifa) || 0,
+        fechasAtencion: new Set<string>(),
+        servicios: new Set<string>(),
+        serviciosMap: {},
+        eessMap: {},
+        mesesMap: {},
+        minFecha: '',
+        maxFecha: '',
+      })).sort((a: any, b: any) => b.totalAtenciones - a.totalAtenciones);
+    }
+
     const map: Record<string, ProfData> = {};
 
     atenciones.forEach(a => {
@@ -377,26 +410,12 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
     });
 
     return Object.values(map).sort((a, b) => b.totalAtenciones - a.totalAtenciones);
-  }, [atenciones]);
-
-  const [serverStats, setServerStats] = useState<any>(null);
-
-  useEffect(() => {
-    let active = true;
-    const combinedFilters = {
-      ...filters,
-      search: searchTerm.trim(),
-    };
-    apiService.getModulesStats(combinedFilters).then(data => {
-      if (active) setServerStats(data);
-    }).catch(err => console.warn('Prof stats notice:', err));
-    return () => { active = false; };
-  }, [filters, searchTerm, atenciones]);
+  }, [atenciones, serverStats]);
 
   // Filtered professionals list based on search and top filters
   const filteredProfList = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    return profAggregated.filter(p => {
+    return profAggregated.filter((p: any) => {
       // Type filter
       if (selectedTipo !== 'TODOS' && p.tipo !== selectedTipo) return false;
 
@@ -425,7 +444,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
     if (!selectedProfDni) {
       return filteredProfList[0] || profAggregated[0] || null;
     }
-    return profAggregated.find(p => p.dni === selectedProfDni || p.nombre === selectedProfDni) || null;
+    return profAggregated.find((p: any) => p.dni === selectedProfDni || p.nombre === selectedProfDni) || null;
   }, [selectedProfDni, filteredProfList, profAggregated]);
 
   // Attentions of current professional
@@ -443,7 +462,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
 
   // Top 10 for visual chart
   const top10 = useMemo(() => filteredProfList.slice(0, 10), [filteredProfList]);
-  const maxTopVal = useMemo(() => Math.max(...top10.map(t => t.totalAtenciones), 1), [top10]);
+  const maxTopVal = useMemo(() => Math.max(...top10.map((t: any) => t.totalAtenciones), 1), [top10]);
 
   // Professional - EESS flat pairs for Table 3
   const profEessPairs = useMemo(() => {
@@ -463,8 +482,8 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
       serviciosList: string[];
     }> = [];
 
-    filteredProfList.forEach(p => {
-      Object.values(p.eessMap).forEach(e => {
+    filteredProfList.forEach((p: any) => {
+      Object.values(p.eessMap).forEach((e: any) => {
         if (selectedEessFilter !== 'TODOS' && e.nombre !== selectedEessFilter) return;
 
         const pct = Math.round((e.count / (p.totalAtenciones || 1)) * 1000) / 10;
@@ -491,7 +510,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
 
   // Total summary metrics
   const totalAtencionesFiltradas = useMemo(() => {
-    return filteredProfList.reduce((acc, p) => acc + p.totalAtenciones, 0);
+    return filteredProfList.reduce((acc: number, p: any) => acc + p.totalAtenciones, 0);
   }, [filteredProfList]);
 
   // Paginated slices for each tab to guarantee instant performance even with 1M+ records
@@ -539,7 +558,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
         'Meses Activos',
         ...allMonthsList.map(m => `Mes ${m.label}`),
       ];
-      rows = filteredProfList.map(p => {
+      rows = filteredProfList.map((p: any) => {
         const monthCols = allMonthsList.map(m => String(p.mesesMap[m.key]?.count || 0));
         return [
           p.dni,
@@ -592,7 +611,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
         'Establecimientos',
         'Rango Fechas Atencion',
       ];
-      rows = filteredProfList.map(p => {
+      rows = filteredProfList.map((p: any) => {
         const dias = p.fechasAtencion.size || 1;
         const prom = (p.totalAtenciones / dias).toFixed(1);
         const eessNombres = Object.keys(p.eessMap).join(' | ');
@@ -753,7 +772,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
     if (activeTab === 'meses') {
       titulo = 'B.3. PRODUCCIÓN MENSUAL POR PROFESIONAL (FECHA DE ATENCIÓN)';
       headers = ['Profesional', 'DNI', 'Tipo', 'Total', 'Meses', ...allMonthsList.map(m => m.label)];
-      rows = filteredProfList.map(p => [
+      rows = filteredProfList.map((p: any) => [
         p.nombre,
         p.dni,
         p.tipo,
@@ -777,7 +796,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
       filename = 'Produccion_Profesionales_EESS.pdf';
     } else {
       headers = ['Profesional', 'DNI', 'Tipo', 'Colegiatura', 'Total Aten.', 'Días', 'Prom/Día', 'EESS'];
-      rows = filteredProfList.map(p => {
+      rows = filteredProfList.map((p: any) => {
         const dias = p.fechasAtencion.size || 1;
         const prom = (p.totalAtenciones / dias).toFixed(1);
         return [
@@ -1035,7 +1054,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
             </div>
 
             <div className="space-y-3">
-              {top10.map((prof, idx) => {
+              {top10.map((prof: any, idx: number) => {
                 const barWidth = Math.max(Math.round((prof.totalAtenciones / maxTopVal) * 100), 5);
                 const dias = prof.fechasAtencion.size || 1;
                 const prom = (prof.totalAtenciones / dias).toFixed(1);
@@ -1142,10 +1161,10 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                       </td>
                     </tr>
                   ) : (
-                    paginatedProfList.map(p => {
+                    paginatedProfList.map((p: any) => {
                       const dias = p.fechasAtencion.size || 1;
                       const prom = (p.totalAtenciones / dias).toFixed(1);
-                      const eessEntries = Object.values(p.eessMap);
+                      const eessEntries = Object.values(p.eessMap) as any[];
 
                       return (
                         <tr key={p.dni + p.nombre} className="hover:bg-slate-50 transition-colors">
@@ -1297,7 +1316,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {paginatedMesesList.map(p => {
+                  {paginatedMesesList.map((p: any) => {
                     const mesesActivos = Object.keys(p.mesesMap).length;
 
                     return (
@@ -1514,7 +1533,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const prof = profAggregated.find(p => p.dni === item.profDni);
+                              const prof = profAggregated.find((p: any) => p.dni === item.profDni);
                               if (prof) handleDownloadFichaPdf(prof);
                             }}
                             className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white transition-colors cursor-pointer"
@@ -1597,7 +1616,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                     }}
                     className="bg-slate-800 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:border-emerald-500 max-w-xs"
                   >
-                    {profAggregated.map(p => (
+                    {profAggregated.map((p: any) => (
                       <option key={p.dni + p.nombre} value={p.dni}>
                         {p.nombre} ({p.totalAtenciones} aten.)
                       </option>
@@ -1663,7 +1682,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
               </h4>
 
               <div className="space-y-2">
-                {Object.values(currentProf.mesesMap).map(m => {
+                {Object.values(currentProf.mesesMap).map((m: any) => {
                   const pct = Math.round((m.count / (currentProf.totalAtenciones || 1)) * 100);
                   return (
                     <div key={m.key} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
@@ -1681,8 +1700,8 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                         ></div>
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1.5">
-                        <span>{m.fechas.size} días con atención</span>
-                        <span>Laboró en {m.eess.size} EESS</span>
+                        <span>{m.fechas?.size || 0} días con atención</span>
+                        <span>Laboró en {m.eess?.size || 0} EESS</span>
                       </div>
                     </div>
                   );
@@ -1698,7 +1717,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
               </h4>
 
               <div className="space-y-2">
-                {Object.values(currentProf.eessMap).map(e => {
+                {Object.values(currentProf.eessMap).map((e: any) => {
                   const pct = Math.round((e.count / (currentProf.totalAtenciones || 1)) * 100);
                   return (
                     <div key={e.nombre} className="p-3 rounded-xl bg-purple-50/50 border border-purple-100">
@@ -1718,7 +1737,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                         ></div>
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1.5">
-                        <span>{e.fechas.size} días trabajados</span>
+                        <span>{e.fechas?.size || 0} días trabajados</span>
                         <span>
                           Período: {e.minFecha} al {e.maxFecha}
                         </span>
@@ -1749,8 +1768,8 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {Object.values(currentProf.serviciosMap)
-                .sort((a, b) => b.count - a.count)
-                .map(s => {
+                .sort((a: any, b: any) => b.count - a.count)
+                .map((s: any) => {
                   const pct = Math.round((s.count / (currentProf.totalAtenciones || 1)) * 100);
                   return (
                     <div key={s.nombre} className="p-3 rounded-xl bg-emerald-50/40 border border-emerald-100 flex flex-col justify-between">
@@ -1772,7 +1791,7 @@ export const AtencionesProfesional: React.FC<Props> = ({ atenciones, filters }) 
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-emerald-100/60 font-mono">
                         <span>{pct}% de su cartera</span>
-                        <span className="font-bold text-slate-700">Fact: S/ {s.tarifaTotal.toFixed(2)}</span>
+                        <span className="font-bold text-slate-700">Fact: S/ {(s.tarifaTotal || 0).toFixed(2)}</span>
                       </div>
                     </div>
                   );

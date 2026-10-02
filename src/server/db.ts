@@ -847,7 +847,6 @@ export async function getModulesAggregatedStats(filterParams: Record<string, str
     ${whereClause}
     GROUP BY nombre_profesional
     ORDER BY atenciones DESC
-    LIMIT 200
   `).all(...binds);
 
   // 4. Servicios Ranking
@@ -1009,8 +1008,7 @@ export async function getFilterOptions(): Promise<{
     SELECT DISTINCT dni_profesional as dni, nombre_profesional as nombre, tipo_profesional as tipo 
     FROM atenciones 
     WHERE nombre_profesional IS NOT NULL AND nombre_profesional != '' 
-    ORDER BY nombre_profesional ASC 
-    LIMIT 200
+    ORDER BY nombre_profesional ASC
   `).all() as any[];
 
   const serviciosList = database.prepare(`
